@@ -1,0 +1,84 @@
+<script>
+/* lb-journey · first-party record of how a visitor moves through the site, for the Conversion Agent's handoff.
+   Runs on every page of the site. Records ONLY after analytics consent (CookieFirst "performance").
+   Stores in this browser only (localStorage "lb-journey-v1"): referrer host, UTMs, landing page, pages with time and scroll,
+   visit count. Nothing is sent anywhere by this script; the agent reads it when the visitor talks to it. */
+(function () {
+  if (window.lbJourney) return;                         // already running (site-wide snippet + page bundle)
+  var KEY = 'lb-journey-v1', GAP = 30 * 60 * 1000, MAX_PAGES = 30, MAX_SESSIONS = 3;
+  function demoHost() { return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) || location.protocol === 'file:'; }
+  function consent() {
+    var c = window.CookieFirst;
+    if (!c) return demoHost();                         // no consent manager: only on a local demo copy
+    return !!(c.hasConsented && c.consent && c.consent.performance);
+  }
+  function load() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } }
+  function save(j) { try { localStorage.setItem(KEY, JSON.stringify(j)); } catch (e) {} }
+  function utm() {
+    var q = new URLSearchParams(location.search), o = {};
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) { if (q.get(k)) o[k.slice(4)] = q.get(k).slice(0, 80); });
+    if (q.get('gclid')) o.ad = 'google_ads'; if (q.get('fbclid')) o.ad = 'meta_ads'; if (q.get('li_fat_id')) o.ad = 'linkedin_ads';
+    return o;
+  }
+  function refHost() { try { var h = new URL(document.referrer).hostname.replace(/^www\./, ''); return h === location.hostname.replace(/^www\./, '') ? '' : h; } catch (e) { return ''; } }
+  function seedDemo(j) {                              // ?journey=demo on a local copy: a believable earlier path, clearly marked
+    var now = Date.now();
+    j.first = now - 3 * 864e5; j.visits = 2; j.demo = true;
+    j.sessions = [{ start: now - 3 * 864e5, last: now - 3 * 864e5 + 6e4, ref: 'google.com', utm: {}, landing: '/whatsapp-business-api', pages: [{ p: '/whatsapp-business-api', t: 'WhatsApp Business API', ts: now - 3 * 864e5, d: 62, sc: 70 }] },
+      { start: now - 2e5, last: now - 2e4, ref: 'chatgpt.com', utm: { source: 'chatgpt.com' }, landing: '/pricing', pages: [
+        { p: '/pricing', t: 'Pricing', ts: now - 2e5, d: 41, sc: 85 }, { p: '/whatsapp', t: 'WhatsApp chatbot', ts: now - 1.5e5, d: 70, sc: 60 }] }];
+    return j;
+  }
+  var started = false;
+  function track() {
+    if (started || !consent()) return; started = true;
+    var now = Date.now(), j = load() || { first: now, visits: 0, sessions: [] };
+    if (demoHost() && /(^|[?&])journey=demo\b/.test(location.search) && !j.demo) j = seedDemo({});
+    var s = j.sessions[j.sessions.length - 1], ext = refHost();
+    if (!s || now - s.last > GAP || ext) {
+      s = { start: now, last: now, ref: ext, utm: utm(), landing: location.pathname, pages: [] };
+      j.sessions.push(s); j.visits = (j.visits || 0) + 1;
+      if (j.sessions.length > MAX_SESSIONS) j.sessions.shift();
+    }
+    var pg = { p: location.pathname, t: document.title.slice(0, 80), ts: now, d: 0, sc: 0 };
+    s.pages.push(pg); if (s.pages.length > MAX_PAGES) s.pages.shift(); s.last = now; save(j);
+    var t0 = now, maxSc = 0;
+    addEventListener('scroll', function () { var h = document.documentElement.scrollHeight - innerHeight; if (h > 0) maxSc = Math.max(maxSc, Math.round(scrollY / h * 100)); }, { passive: true });
+    function flush() {
+      var jj = load(); if (!jj || !jj.sessions.length) return;
+      var ss = jj.sessions[jj.sessions.length - 1], last = ss.pages[ss.pages.length - 1];
+      if (last && last.ts === pg.ts) { last.d = Math.round((Date.now() - t0) / 1000); last.sc = maxSc; ss.last = Date.now(); save(jj); }
+    }
+    addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(); });
+    addEventListener('pagehide', flush); setInterval(flush, 15000);
+  }
+  function dur(s) { return s >= 60 ? Math.floor(s / 60) + 'm ' + (s % 60) + 's' : s + 's'; }
+  /* A compact, human-readable account of the journey, for the agent and for the team */
+  function describe() {
+    var j = load(); if (!j || !j.sessions.length) return null;
+    var s = j.sessions[j.sessions.length - 1], here = location.pathname;
+    var before = s.pages.filter(function (p) { return p.p !== here; }).slice(-6).map(function (p) { return p.p + (p.d ? ' (' + dur(p.d) + ')' : ''); });
+    var u = s.utm || {}, camp = u.campaign ? u.campaign + (u.source ? ' (' + u.source + (u.medium ? '/' + u.medium : '') + ')' : '') : (u.ad || '');
+    var prev = j.sessions.length > 1 ? j.sessions[j.sessions.length - 2] : null;
+    var days = Math.round((Date.now() - (j.first || s.start)) / 864e5);
+    return {
+      from: s.ref || (u.source || 'direct'), campaign: camp, landing: s.landing, before: before,
+      visit: j.visits || 1, firstDaysAgo: days, previous: prev ? (prev.ref || 'direct') + ' → ' + prev.pages.map(function (p) { return p.p; }).slice(0, 4).join(' → ') : '', demo: !!j.demo
+    };
+  }
+  function line() {                                      // the "[Page context: …]" line the agent reads
+    var d = describe(); if (!d) return '';
+    var parts = ['came from ' + d.from];
+    if (d.campaign) parts.push('campaign ' + d.campaign);
+    if (d.landing && d.landing !== location.pathname) parts.push('landed on ' + d.landing);
+    if (d.before.length) parts.push('before this article: ' + d.before.join(' → '));
+    parts.push(d.visit > 1 ? 'visit ' + d.visit + ', first ' + (d.firstDaysAgo ? d.firstDaysAgo + ' days ago' : 'today') : 'first visit');
+    if (d.previous) parts.push('previous visit: ' + d.previous);
+    return '[Page context: ' + parts.join(' · ') + ']';
+  }
+  window.lbJourney = { track: track, get: load, describe: describe, line: line, consent: consent };
+  if (consent()) track();
+  ['cf_init', 'cf_consent', 'cf_consent_loaded'].forEach(function (ev) { addEventListener(ev, track); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', track); else setTimeout(track, 0);
+})();
+</script>

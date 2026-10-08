@@ -1,0 +1,26 @@
+<script>
+/* Landbot Conversion Agent Master · only on /pricing, only after cookie consent (CookieFirst "functional") · code: github.com/modedigitalstudio/landbot-conversion-agent bundles/lb-awe-pricing.js (webflow.io = staging branch, landbot.io = main) */
+(function () {
+  if (!/^\/pricing\/?$/.test(location.pathname)) return;
+  var REF = /\.webflow\.io$/.test(location.hostname) ? 'staging' : 'main';
+  var SRC = 'https://cdn.jsdelivr.net/gh/modedigitalstudio/landbot-conversion-agent@' + REF + '/bundles/lb-awe-pricing.js', done = false;
+  function ok() { var c = window.CookieFirst; return !!(c && c.hasConsented && c.consent && c.consent.functional); }
+  function country() {   // the visitor's country from Cloudflare (landbot.io is behind it); 1.5 s max, then the agent falls back to the time zone
+    return Promise.race([
+      fetch('/cdn-cgi/trace').then(function (r) { return r.text(); }).then(function (t) { var m = t.match(/^loc=([A-Z]{2})$/m); if (m && m[1] !== 'XX') window.LB_COUNTRY = m[1]; }),
+      new Promise(function (r) { setTimeout(r, 1500); })
+    ]).catch(function () {});
+  }
+  function go() {
+    if (done || !ok()) return; done = true;
+    Promise.all([country(), fetch(SRC, { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })]).then(function (res) {
+      var s = document.createElement('script'); s.type = 'module'; s.textContent = res[1]; document.body.appendChild(s);
+    }).catch(function (e) { done = false; console.warn('[lb-awe]', e); });
+  }
+  window.addEventListener('cf_init', go);
+  window.addEventListener('cf_consent', go);
+  window.addEventListener('cf_consent_loaded', go);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+  setTimeout(go, 1500);
+})();
+</script>
