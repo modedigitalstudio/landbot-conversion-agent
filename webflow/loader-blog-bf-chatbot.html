@@ -1,0 +1,20 @@
+<script>
+/* Landbot Conversion Agent · only on the "Black Friday chatbot" post (10 AI agents), only after cookie consent (CookieFirst "functional") · code: github.com/modedigitalstudio/landbot-conversion-agent bundles/lb-awe-bf-chatbot.js (webflow.io = staging branch, landbot.io = main) */
+(function () {
+  if (!/^\/blog\/black-friday-chatbot\/?$/.test(location.pathname)) return;
+  var REF = /\.webflow\.io$/.test(location.hostname) ? 'staging' : 'main';
+  var SRC = 'https://cdn.jsdelivr.net/gh/modedigitalstudio/landbot-conversion-agent@' + REF + '/bundles/lb-awe-bf-chatbot.js', done = false;
+  function ok() { var c = window.CookieFirst; return !!(c && c.hasConsented && c.consent && c.consent.functional); }
+  function go() {
+    if (done || !ok()) return; done = true;
+    fetch(SRC, { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }).then(function (code) {
+      var s = document.createElement('script'); s.type = 'module'; s.textContent = code; document.body.appendChild(s);
+    }).catch(function (e) { done = false; console.warn('[lb-awe]', e); });
+  }
+  window.addEventListener('cf_init', go);
+  window.addEventListener('cf_consent', go);
+  window.addEventListener('cf_consent_loaded', go);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+  setTimeout(go, 1500);
+})();
+</script>
