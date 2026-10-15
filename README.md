@@ -10,6 +10,7 @@ Each page's loader is pasted into Webflow **once**. After that, updating the age
 | `/lp/agent-studio` | [`bundles/lb-awe-agent-studio.js`](bundles/lb-awe-agent-studio.js) | [`webflow/loader-agent-studio.html`](webflow/loader-agent-studio.html) |
 | `/blog/whatsapp-business-api-pricing-change-october` | [`bundles/lb-awe-wa-pricing.js`](bundles/lb-awe-wa-pricing.js) | [`webflow/loader-blog-wa-pricing.html`](webflow/loader-blog-wa-pricing.html) |
 | `/blog/black-friday-chatbot` | [`bundles/lb-awe-bf-chatbot.js`](bundles/lb-awe-bf-chatbot.js) | [`webflow/loader-blog-bf-chatbot.html`](webflow/loader-blog-bf-chatbot.html) (in the Layout v2 article embed) |
+| `/blog/black-friday-customer-service`, `/es/blog/atencion-al-cliente-black-friday`, `/pt-br/blog/atendimento-ao-cliente-black-friday` | [`bundles/lb-awe-bf-customer-service.js`](bundles/lb-awe-bf-customer-service.js) | [`webflow/loader-blog-bf-customer-service.html`](webflow/loader-blog-bf-customer-service.html) (in the Layout v2 article embed of the EN, ES and PT blog templates) |
 | whole site | (none, inline) | [`webflow/site-footer-lb-journey.html`](webflow/site-footer-lb-journey.html) |
 
 ## Two branches: staging and main
