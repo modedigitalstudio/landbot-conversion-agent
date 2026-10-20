@@ -1,4 +1,4 @@
-/* Landbot Conversion Agent Master · pricing (/pricing) · built 2026-10-08 */
+/* Landbot Conversion Agent Master · pricing (/pricing) · built 2026-10-20 */
 /* lb-journey · first-party record of how a visitor moves through the site, for the Conversion Agent's handoff.
    Runs on every page of the site. Records ONLY after analytics consent (CookieFirst "performance").
    Stores in this browser only (localStorage "lb-journey-v1"): referrer host, UTMs, landing page, pages with time and scroll,
@@ -307,7 +307,7 @@ try { visits = +(localStorage.getItem('awe-pricing-visits') || 0); localStorage.
 const st = { core: null, boot: null, facts: {}, awaiting: null, answers: 0, nbaKey: '', open: false, t0: Date.now(), teamDone: false, section: '', cited: new Set(), items: new Set(), mailMode: 'team', hot: 0 };
 const J = () => (window.lbJourney && window.lbJourney.describe && window.lbJourney.describe()) || null;
 function initFacts() {
-  try { const d = J(); if (d && d.from) st.facts.from = { v: d.from === 'direct' ? T.direct : d.from, guess: true }; } catch (_) {}
+  try { const d = J(); if (d && d.from) st.facts.from = { v: d.from, direct: d.from === 'direct', guess: true }; } catch (_) {}
   if (GEO.cc) st.facts.country = { cc: GEO.cc, guess: true };
 }
 initFacts();
@@ -453,9 +453,12 @@ async function say(text, payload) {
   openPanel(); repliesEl.innerHTML = '';
   thread.querySelectorAll('.awe-nba').forEach((n) => n.remove());
   push(h(`<div class="awe-me">${esc(q)}</div>`));
-  if (!payload) followLang(q); readUser(q); setWorking(guessSection(q));
+  if (!payload) followLang(q); const aiHit = !payload && readAI(q); readUser(aiHit ? q.replace(aiHit, ' ') : q); setWorking(guessSection(q));
   let out = q;
   if (!st.ctxSent && !payload) { st.ctxSent = true; out = contextLine() + '\n\n' + q; }
+  const est = payload ? '' : estimateLine();
+  if (est && est !== st.lastEst) { st.lastEst = est; out += '\n\n' + est; }   // only when the figures change
+  else if (!payload && out === q) out += '\n\n[chat language ' + LANG + ']';   // keeps the reply in the visitor's language
   armWatchdog(q);
   try { await deliver(payload ? q : out, payload); }
   catch (e) { setWorking(null); push(h(`<div class="awe-msg"><p>Something went wrong reaching the agent. Try again in a moment.</p></div>`)); console.warn('[awe]', e); }
@@ -562,7 +565,7 @@ function promptCard(code) {
   card.querySelector('pre').textContent = code.trim();
   return card;
 }
-const FIELD_LINE = /^\s*[*_`]*\s*(conversation_summary|visitor_journey|channels_wanted|page_lang|arrival_reason|use_case|channel|team_size|monthly_volume|urgency|comparing|plan_interest|monthly_estimate|country_tier|subsource|source)\s*[*_`]*\s*[:=]/i;
+const FIELD_LINE = /^\s*[*_`]*\s*([a-z]+(_[a-z]+)+|channel|urgency|comparing|subsource|source)\s*[*_`]*\s*[:=]/i;   // any snake_case field name, not only the ones listed when it was written
 async function agentText(text) {
   text = String(text).split(/\n/).filter((l) => !FIELD_LINE.test(l)).join('\n');   // a field the agent saves must never be shown to the visitor
   const g = st.gen;   // a reply from a session that was restarted stops drawing
@@ -629,8 +632,10 @@ function readUser(q) {
   if (/(team|equipo|time)\b.{0,25}(write|email|escrib|escrev)|que me escrib|que me escrevam|write to me|email me/i.test(q)) st.mailMode = 'team';
   if (/demo|call|llamada|ligação|meeting|reuni|precio|price|preço|quote|presupuesto|orçamento|contract|contrato|sales|ventas|vendas|this (week|month)|esta semana|este mes|urgent/i.test(q)) st.hot++;
   if (st.awaiting === 'why' && q.length > 2) { f.why = { v: q.length > 70 ? q.slice(0, 68) + '…' : q }; changed = true; st.awaiting = null; }
-  if (!f.use) for (const [re, u] of USE_RX) if (re.test(q)) { f.use = { k: u }; changed = true; break; }
-  const web = /web|site|página|landing/i.test(q), wa = /whatsapp/i.test(q);
+  const noWa = /\b(no|not|without|sin|sem|nada de|don'?t need|no necesito|não preciso)\b[^.,;]{0,12}whatsapp/i.test(q);
+  if (!f.use) for (const [re, u] of USE_RX) if (re.test(q) && !(u === 'wa' && noWa)) { f.use = { k: u }; changed = true; break; }
+  if (noWa) { if (f.use && f.use.k === 'wa') delete f.use; if (f.chan) f.chan = { k: 'web' }; changed = true; }
+  const web = /web|site|página|landing/i.test(q), wa = /whatsapp/i.test(q) && !noWa;
   if (web || wa) { const c = web && wa ? 'both' : wa ? (f.chan && f.chan.k === 'web' ? 'both' : 'wa') : (f.chan && f.chan.k === 'wa' ? 'both' : 'web'); if (!f.chan || f.chan.k !== c) { f.chan = { k: c }; changed = true; } }
   const v = parseVolume(q); if (v) { f.vol = { v }; changed = true; }
   const s = parseSize(q); if (s) { f.size = { v: s }; changed = true; }
@@ -638,6 +643,37 @@ function readUser(q) {
   if (crm.length) { f.crm = { v: crm.join(', ') }; changed = true; }
   const cc = countryFromText(q); if (cc && (!f.country || f.country.cc !== cc || f.country.guess)) { f.country = { cc }; changed = true; }
   if (changed) { renderFacts(); }
+}
+/* AI chats the visitor gives: '1,000 AI chats', 'IA: 800', or a bare number right after the agent asked for them */
+function readAI(q) {
+  const N = '(\\d{1,3}(?:[.,\\s]\\d{3})+|\\d+(?:[.,]\\d+)?)\\s*(k|mil)?';
+  let m = q.match(new RegExp(N + '[^\\d]{0,30}\\b(?:ai|ia)\\b', 'i')) || q.match(new RegExp('\\b(?:ai|ia)\\b[^\\d]{0,25}' + N, 'i'));
+  if (!m && st.askAI && /^\D{0,20}\d[\d.,\s]*(k|mil)?\D{0,25}$/i.test(q)) m = q.match(new RegExp(N, 'i'));
+  if (!m || /\b(no|sin|sem|without)\s+(ai|ia)\b/i.test(m[0])) return null;
+  let n = parseFloat(m[1].replace(/\s/g, '').replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')); if (m[2]) n *= 1000;
+  if (!(n >= 0)) return null; st.facts.ai = { v: n }; st.askAI = false; return m[0];
+}
+/* the plan the facts point to, priced exactly like the page: base + ceil(extra chats / 500) packs × 25 + extra AI chats × 0.10 */
+function estimateLine() {
+  const f = st.facts, vol = f.vol ? f.vol.v : 0, ai = f.ai ? f.ai.v : null;
+  if (!vol && ai === null) return '';
+  const wa = f.chan && f.chan.k !== 'web' || f.use && f.use.k === 'wa';
+  if (vol > 20000 || (f.size && f.size.v > 500)) return '[Page estimate: volume above the public plans → Business, custom price agreed by contract. Do not compute a total.]';
+  const plan = wa ? 'prowa' : vol > 500 || f.crm ? 'pro' : 'starter';
+  const P = PRICES[pageCur()] || PRICES.EUR, s = P.s, ann = pageBilling() === 'annual', i = ann ? 0 : 1;
+  const base = plan === 'starter' ? P.starter[i] : plan === 'pro' ? P.pro[i] : P.pro[i] + P.wa[i];
+  const inc = plan === 'starter' ? 500 : 2500, aiInc = plan === 'starter' ? 100 : plan === 'pro' ? 300 : 500;
+  const name = { starter: 'Starter', pro: 'Professional', prowa: 'Professional + WhatsApp' }[plan];
+  const extra = Math.max(0, vol - inc), packs = Math.ceil(extra / 500), chatCost = packs * 25;
+  const aiExtra = ai === null ? 0 : Math.max(0, ai - aiInc), aiCost = Math.round(aiExtra * 0.10 * 100) / 100;
+  const money = (n) => s + (Number.isInteger(n) ? n : n.toFixed(2));
+  const parts = [name + ' ' + money(base) + '/mo (' + (ann ? 'annual' : 'monthly') + ' billing, includes ' + fmt(inc) + ' chats and ' + aiInc + ' AI chats)'];
+  if (packs) parts.push(fmt(extra) + ' extra chats = ' + packs + ' pack' + (packs > 1 ? 's' : '') + ' of 500 × ' + s + '25 = ' + money(chatCost));
+  if (aiExtra) parts.push(fmt(aiExtra) + ' extra AI chats × ' + s + '0.10 = ' + money(aiCost));
+  const total = base + chatCost + aiCost;
+  return '[Page estimate, exact, computed from the prices the visitor is viewing (' + pageCur() + '): ' + parts.join(' + ') + ' → TOTAL ' + money(total) + '/mo before tax'
+    + (ai === null ? '; AI chats not given (' + aiInc + ' included, extra ' + s + '0.10 each): ask how many the agent would handle' : '')
+    + '. Quote these exact figures and this total; do not recompute or round. Reply in the chat language: ' + LANG + '.]';
 }
 function countryFromText(q) {
   const NAMES = { GB: /\b(uk|united kingdom|england|reino unido|inglaterra|london|londres)\b/i, ES: /\b(spain|españa|espanha|madrid|barcelona)\b/i, US: /\b(usa|united states|estados unidos|eeuu|eua)\b/i, MX: /\b(m[eé]xico)\b/i,
@@ -647,6 +683,7 @@ function countryFromText(q) {
   return '';
 }
 function readAgent(text) {
+  st.askAI = /\b(ai|ia)\b[^?]{0,80}\?|\?[^?]{0,10}$/i.test(text) && /\b(ai|ia)\b/i.test(text.slice(-200));
   const tail = text.slice(-220);
   st.awaiting = /(what (made|brought|got) you|qu[eé] te (ha )?(hecho|llevado|llev[oó]|tra[ií]do|trajo)|o que (te )?(trouxe|fez)|por que voc[eê])/i.test(tail) ? 'why' : null;
 }
@@ -655,6 +692,7 @@ function factVal(k, o) {
   if (k === 'use') return T.USE[o.k]; if (k === 'chan') return T.CHAN[o.k];
   if (k === 'vol') return fmt(o.v) + T.volU; if (k === 'size') return o.v >= 600 ? '500+' : o.v < 10 ? '<10' : String(o.v);
   if (k === 'country') return countryName(o.cc, LANG) + (o.guess ? ' · ' + T.guessed : '');
+  if (k === 'from' && o.direct) return T.direct;
   return o.v;
 }
 function renderFacts() {
@@ -770,6 +808,8 @@ function emailCard() {
 /* Calendly's "anything that will help prepare" is seen and edited by the visitor: only what they told us, readable. Nothing internal (tier, guessed country, visits, journey): that reaches sales through the bot fields. */
 function prepNote() {
   const f = st.facts, P = [];
+  const said = (st.userMsgs || []).map((m) => m.replace(/\s+/g, ' ').trim()).filter((m) => m.length > 12).slice(0, 2).join(' / ');
+  if (said) P.push(({ en: 'In your words', es: 'En tus palabras', pt: 'Nas suas palavras' })[LANG] + ': "' + said.slice(0, 400) + '"');
   if (f.why) P.push(T.k.why + ': ' + f.why.v);
   const facts = FACT_ORDER.filter((k) => f[k] && !f[k].guess && !['why', 'from', 'email', 'country'].includes(k)).map((k) => T.k[k] + ': ' + factVal(k, f[k]));
   if (st.plan) facts.push('Plan: ' + PLAN_COPY.en[st.plan][0]);
@@ -952,6 +992,7 @@ function consentGone() { const c = window.CookieFirst; return !!(c && c.consent 
 }, 50)));
 async function newConversation() {
   await restartSession();
+  if (LANG !== PAGE_LANG) { LANG = PAGE_LANG; T = DICT[LANG]; paint(); }
   Object.assign(st, { restarted: false, userMsgs: [], answers: 0, nbaKey: '', items: new Set(), plan: null, planEl: null, teamDone: false, hot: 0, mailMode: 'team', fromBook: false, demoLang: null, cited: new Set(), awaiting: null, facts: {} });
   initFacts(); thread.innerHTML = ''; repliesEl.innerHTML = ''; setWorking(null); renderFacts(); openPanel(); keepFocus(true);
 }

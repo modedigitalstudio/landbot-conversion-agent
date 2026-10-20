@@ -1,4 +1,4 @@
-/* Landbot Conversion Agent Master · home (/, /es, /pt-br) · built 2026-10-08 */
+/* Landbot Conversion Agent Master · home (/, /es, /pt-br) · built 2026-10-20 */
 /* lb-journey · first-party record of how a visitor moves through the site, for the Conversion Agent's handoff.
    Runs on every page of the site. Records ONLY after analytics consent (CookieFirst "performance").
    Stores in this browser only (localStorage "lb-journey-v1"): referrer host, UTMs, landing page, pages with time and scroll,
@@ -175,7 +175,7 @@ const DICT = {
     planH: 'The plan that fits', planWhy: 'Why', perMo: '/mo', annual: 'billed annually', monthlyP: (p) => `or ${p} monthly`, custom: 'Custom pricing', trial: '14-day free trial · no card on Free', planSrc: 'Prices from landbot.io/pricing',
     mail: 'Where should the team reach you?', mailSub: 'They reply within one business day, with everything you told me already on the table.', mailPh: 'you@company.com', sendIt: 'Send', mailBad: 'That doesn’t look like an email yet.',
     done: 'Done. Here’s what changed', r1: 'Lead saved in Landbot', r1s: 'Inbox · Home Conversion Agent', r2: 'Context attached to the lead', r3: 'Follow-up promised', r3s: 'within one business day · Landbot team',
-    foot: 'Answers only from landbot.io and its pricing page · nothing is shared until you book or leave an email.',
+    foot: 'Answers only from landbot.io and its pricing page · nothing is shared until you book a demo.',
     fromSite: 'LANDBOT.IO', pointLabel: 'Landbot AI is reading this',
     msgPlan: 'Which plan fits me?', msgDemo: 'I’d like to book a demo.', msgCorr: (k, v) => `Quick correction: ${k} is ${v}.`,
     nudge: { hero: ['Tell me your goal · I’ll show you how', 'I want to turn more of my website visitors into leads. How would Landbot do it?'],
@@ -203,7 +203,7 @@ const DICT = {
     planH: 'El plan que te encaja', planWhy: 'Por qué', perMo: '/mes', annual: 'facturado anualmente', monthlyP: (p) => `o ${p} al mes`, custom: 'Precio a medida', trial: 'Prueba gratis de 14 días · sin tarjeta en Free', planSrc: 'Precios de landbot.io/pricing',
     mail: '¿Dónde te contacta el equipo?', mailSub: 'Responden en un día laborable, con todo lo que me has contado ya sobre la mesa.', mailPh: 'tu@empresa.com', sendIt: 'Enviar', mailBad: 'Eso todavía no parece un email.',
     done: 'Hecho. Esto es lo que ha cambiado', r1: 'Lead guardado en Landbot', r1s: 'Inbox · Home Conversion Agent', r2: 'Contexto adjunto al lead', r3: 'Seguimiento prometido', r3s: 'en un día laborable · equipo de Landbot',
-    foot: 'Responde solo con landbot.io y su página de precios · no se comparte nada hasta que reserves o dejes un email.',
+    foot: 'Responde solo con landbot.io y su página de precios · no se comparte nada hasta que reserves una demo.',
     fromSite: 'LANDBOT.IO', pointLabel: 'Landbot AI está leyendo esto',
     msgPlan: '¿Qué plan me encaja?', msgDemo: 'Quiero reservar una demo.', msgCorr: (k, v) => `Corrijo: ${k} es ${v}.`,
     nudge: { hero: ['Cuéntame tu objetivo · te enseño cómo', 'Quiero convertir más visitas de mi web en leads. ¿Cómo lo haría Landbot?'],
@@ -231,7 +231,7 @@ const DICT = {
     planH: 'O plano que encaixa', planWhy: 'Por quê', perMo: '/mês', annual: 'cobrança anual', monthlyP: (p) => `ou ${p} no mensal`, custom: 'Preço sob medida', trial: 'Teste grátis de 14 dias · sem cartão no Free', planSrc: 'Preços de landbot.io/pricing',
     mail: 'Onde o time pode falar com você?', mailSub: 'Respondem em um dia útil, com tudo o que você me contou já na mesa.', mailPh: 'voce@empresa.com', sendIt: 'Enviar', mailBad: 'Isso ainda não parece um e-mail.',
     done: 'Pronto. Isto é o que mudou', r1: 'Lead salvo em Landbot', r1s: 'Inbox · Home Conversion Agent', r2: 'Contexto anexado ao lead', r3: 'Retorno combinado', r3s: 'em um dia útil · time de Landbot',
-    foot: 'Responde só com landbot.io e a página de preços · nada é compartilhado até você agendar ou deixar um e-mail.',
+    foot: 'Responde só com landbot.io e a página de preços · nada é compartilhado até você agendar uma demo.',
     fromSite: 'LANDBOT.IO', pointLabel: 'Landbot AI está lendo isto',
     msgPlan: 'Qual plano encaixa para mim?', msgDemo: 'Quero agendar uma demo.', msgCorr: (k, v) => `Corrigindo: ${k} é ${v}.`,
     nudge: { hero: ['Me conta o seu objetivo · eu mostro como', 'Quero transformar mais visitas do meu site em leads. Como Landbot faria isso?'],
@@ -307,7 +307,7 @@ try { visits = +(localStorage.getItem('awe-home-visits') || 0); localStorage.set
 const st = { core: null, boot: null, facts: {}, awaiting: null, answers: 0, nbaKey: '', open: false, t0: Date.now(), teamDone: false, section: '', cited: new Set(), items: new Set(), mailMode: 'team', hot: 0 };
 const J = () => (window.lbJourney && window.lbJourney.describe && window.lbJourney.describe()) || null;
 function initFacts() {
-  try { const d = J(); if (d && d.from) st.facts.from = { v: d.from === 'direct' ? T.direct : d.from, guess: true }; } catch (_) {}
+  try { const d = J(); if (d && d.from) st.facts.from = { v: d.from, direct: d.from === 'direct', guess: true }; } catch (_) {}
   if (GEO.cc) st.facts.country = { cc: GEO.cc, guess: true };
 }
 initFacts();
@@ -561,7 +561,7 @@ function promptCard(code) {
   card.querySelector('pre').textContent = code.trim();
   return card;
 }
-const FIELD_LINE = /^\s*[*_`]*\s*(conversation_summary|visitor_journey|channels_wanted|page_lang|arrival_reason|use_case|channel|team_size|monthly_volume|urgency|comparing|country_tier|subsource|source)\s*[*_`]*\s*[:=]/i;
+const FIELD_LINE = /^\s*[*_`]*\s*([a-z]+(_[a-z]+)+|channel|urgency|comparing|subsource|source)\s*[*_`]*\s*[:=]/i;   // any snake_case field name, not only the ones listed when it was written
 async function agentText(text) {
   text = String(text).split(/\n/).filter((l) => !FIELD_LINE.test(l)).join('\n');   // a field the agent saves must never be shown to the visitor
   const g = st.gen;   // a reply from a session that was restarted stops drawing
@@ -650,6 +650,7 @@ function factVal(k, o) {
   if (k === 'use') return T.USE[o.k]; if (k === 'chan') return T.CHAN[o.k];
   if (k === 'vol') return fmt(o.v) + T.volU; if (k === 'size') return o.v >= 600 ? '500+' : o.v < 10 ? '<10' : String(o.v);
   if (k === 'country') return countryName(o.cc, LANG) + (o.guess ? ' · ' + T.guessed : '');
+  if (k === 'from' && o.direct) return T.direct;
   return o.v;
 }
 function renderFacts() {
@@ -761,6 +762,8 @@ function emailCard() {
 /* Calendly's "anything that will help prepare" is seen and edited by the visitor: only what they told us, readable. Nothing internal (tier, guessed country, visits, journey): that reaches sales through the bot fields. */
 function prepNote() {
   const f = st.facts, P = [];
+  const said = (st.userMsgs || []).map((m) => m.replace(/\s+/g, ' ').trim()).filter((m) => m.length > 12).slice(0, 2).join(' / ');
+  if (said) P.push(({ en: 'In your words', es: 'En tus palabras', pt: 'Nas suas palavras' })[LANG] + ': "' + said.slice(0, 400) + '"');
   if (f.why) P.push(T.k.why + ': ' + f.why.v);
   const facts = FACT_ORDER.filter((k) => f[k] && !f[k].guess && !['why', 'from', 'email', 'country'].includes(k)).map((k) => T.k[k] + ': ' + factVal(k, f[k]));
   if (st.plan) facts.push('Plan: ' + PLAN_COPY.en[st.plan][0]);
@@ -943,6 +946,7 @@ function consentGone() { const c = window.CookieFirst; return !!(c && c.consent 
 }, 50)));
 async function newConversation() {
   await restartSession();
+  if (LANG !== PAGE_LANG) { LANG = PAGE_LANG; T = DICT[LANG]; paint(); }
   Object.assign(st, { restarted: false, userMsgs: [], answers: 0, nbaKey: '', items: new Set(), plan: null, planEl: null, teamDone: false, hot: 0, mailMode: 'team', fromBook: false, demoLang: null, cited: new Set(), awaiting: null, facts: {} });
   initFacts(); thread.innerHTML = ''; repliesEl.innerHTML = ''; setWorking(null); renderFacts(); openPanel(); keepFocus(true);
 }
