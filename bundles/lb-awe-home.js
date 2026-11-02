@@ -1,4 +1,4 @@
-/* Landbot Conversion Agent Master · home (/, /es, /pt-br) · built 2026-10-20 */
+/* Landbot Conversion Agent Master · home (/, /es, /pt-br) · built 2026-10-30 */
 /* lb-journey · first-party record of how a visitor moves through the site, for the Conversion Agent's handoff.
    Runs on every page of the site. Records ONLY after analytics consent (CookieFirst "performance").
    Stores in this browser only (localStorage "lb-journey-v1"): referrer host, UTMs, landing page, pages with time and scroll,
@@ -170,7 +170,7 @@ const DICT = {
     back: 'Welcome back. ', phPanel: 'Ask a follow-up', reading: 'Reading', theSite: 'landbot.io', online: 'Online · answers from landbot.io and Pricing', working: 'Working on it',
     facts: 'What I’ve understood', edit: 'tap to correct', nba: 'What makes most sense now', why: 'Why', or: 'or',
     build: 'Build my agent free →', demo: 'Book a demo', plan: 'Which plan fits me?',
-    whyDemo: 'With your team and goal, 30 minutes with the team maps it to your funnel and the right plan, so you don’t have to work it out alone.',
+    whyDemo: 'With your team and goal, a call with a member of the team maps it to your funnel and the right plan, so you don’t have to work it out alone.', tooLong: (n) => `Long message: I kept the first ${n} characters.`,
     whyBuild: 'You can build it yourself today: free plan, no card, live in about 15 minutes.', whyPlan: 'Two answers, channel and volume, are enough to tell you the plan and the price.',
     planH: 'The plan that fits', planWhy: 'Why', perMo: '/mo', annual: 'billed annually', monthlyP: (p) => `or ${p} monthly`, custom: 'Custom pricing', trial: '14-day free trial · no card on Free', planSrc: 'Prices from landbot.io/pricing',
     mail: 'Where should the team reach you?', mailSub: 'They reply within one business day, with everything you told me already on the table.', mailPh: 'you@company.com', sendIt: 'Send', mailBad: 'That doesn’t look like an email yet.',
@@ -189,7 +189,7 @@ const DICT = {
       faq: ['Which plan fits you? · 2 questions', 'Which plan fits me?'] },
     k: { why: 'Why here', use: 'Goal', chan: 'Channel', size: 'Team', vol: 'Volume', crm: 'CRM', country: 'Country', from: 'Came from' }, teamSees: 'What the team will see', direct: 'direct', volU: '/mo', guessed: 'guessed',
     oneMore: 'Yes, one more question', USE: { leads: 'Website leads', wa: 'WhatsApp', support: 'Support' }, CHAN: { web: 'Website', wa: 'WhatsApp', both: 'Website + WhatsApp' },
-    calLoading: 'Loading the calendar…', bookH: 'Book 30 min with the Landbot team', bookSub: 'Pick a slot that suits you. They’ll have this conversation on hand, so no starting from zero.',
+    calLoading: 'Loading the calendar…', bookH: 'Book a call with the Landbot team', bookSub: 'Pick a slot that suits you. They’ll have this conversation on hand, so no starting from zero.',
     demoLang: 'Which language for the demo?', demoLangPT: 'Your demo will be in Portuguese.', bookGo: 'Choose a time →', booked: 'I’ve booked a time', mailInstead: 'Email me instead',
     bookedMsg: 'Great, see you there. The team will have this conversation on hand.', freeToo: 'While you wait for the demo, you can start building free today and arrive with something built.',
     supH: 'This one’s for our support team', supSub: 'They can look at your account and sort it fastest. The help center has guides and a way to reach them.', supGo: 'Open the help center →', backQ: 'Back to my questions',
@@ -198,7 +198,7 @@ const DICT = {
     back: 'Hola de nuevo. ', phPanel: 'Haz otra pregunta', reading: 'Leyendo', theSite: 'landbot.io', online: 'En línea · responde con landbot.io y Pricing', working: 'Trabajando en ello',
     facts: 'Lo que he entendido', edit: 'toca para corregir', nba: 'Lo que tiene más sentido ahora', why: 'Por qué', or: 'o',
     build: 'Crear mi agente gratis →', demo: 'Reservar una demo', plan: '¿Qué plan me encaja?',
-    whyDemo: 'Con tu equipo y tu objetivo, 30 minutos con el equipo lo aterrizan en tu embudo y en el plan correcto, sin que tengas que descifrarlo solo.',
+    whyDemo: 'Con tu equipo y tu objetivo, una llamada con alguien del equipo lo aterriza en tu embudo y en el plan correcto, sin que tengas que descifrarlo solo.', tooLong: (n) => `Mensaje largo: me quedo con los primeros ${n} caracteres.`,
     whyBuild: 'Puedes montarlo tú hoy: plan gratis, sin tarjeta, en vivo en unos 15 minutos.', whyPlan: 'Con dos respuestas, canal y volumen, te digo el plan y el precio.',
     planH: 'El plan que te encaja', planWhy: 'Por qué', perMo: '/mes', annual: 'facturado anualmente', monthlyP: (p) => `o ${p} al mes`, custom: 'Precio a medida', trial: 'Prueba gratis de 14 días · sin tarjeta en Free', planSrc: 'Precios de landbot.io/pricing',
     mail: '¿Dónde te contacta el equipo?', mailSub: 'Responden en un día laborable, con todo lo que me has contado ya sobre la mesa.', mailPh: 'tu@empresa.com', sendIt: 'Enviar', mailBad: 'Eso todavía no parece un email.',
@@ -217,7 +217,7 @@ const DICT = {
       faq: ['¿Qué plan te encaja? · 2 preguntas', '¿Qué plan me encaja?'] },
     k: { why: 'Por qué vino', use: 'Objetivo', chan: 'Canal', size: 'Equipo', vol: 'Volumen', crm: 'CRM', country: 'País', from: 'Vino de' }, teamSees: 'Lo que verá el equipo', direct: 'directo', volU: '/mes', guessed: 'deducido',
     oneMore: 'Sí, una pregunta más', USE: { leads: 'Leads en la web', wa: 'WhatsApp', support: 'Soporte' }, CHAN: { web: 'Web', wa: 'WhatsApp', both: 'Web + WhatsApp' },
-    calLoading: 'Cargando el calendario…', bookH: 'Reserva 30 min con el equipo de Landbot', bookSub: 'Elige el hueco que mejor te venga. Tendrán esta conversación a mano, así que no empiezas de cero.',
+    calLoading: 'Cargando el calendario…', bookH: 'Reserva una llamada con el equipo de Landbot', bookSub: 'Elige el hueco que mejor te venga. Tendrán esta conversación a mano, así que no empiezas de cero.',
     demoLang: '¿En qué idioma quieres la demo?', demoLangPT: 'Tu demo será en portugués.', bookGo: 'Elegir hora →', booked: 'Ya he reservado', mailInstead: 'Prefiero que me escribáis',
     bookedMsg: 'Genial, nos vemos ahí. El equipo tendrá esta conversación a mano.', freeToo: 'Mientras llega la demo, puedes empezar gratis hoy y llegar con algo ya montado.',
     supH: 'Esto es cosa de nuestro equipo de soporte', supSub: 'Pueden mirar tu cuenta y resolverlo antes. En el centro de ayuda tienes guías y cómo contactarles.', supGo: 'Abrir el centro de ayuda →', backQ: 'Volver a mis preguntas',
@@ -226,7 +226,7 @@ const DICT = {
     back: 'Que bom te ver de novo. ', phPanel: 'Faça outra pergunta', reading: 'Lendo', theSite: 'landbot.io', online: 'Online · responde com landbot.io e Pricing', working: 'Trabalhando nisso',
     facts: 'O que eu entendi', edit: 'toque para corrigir', nba: 'O que faz mais sentido agora', why: 'Por quê', or: 'ou',
     build: 'Criar meu agente grátis →', demo: 'Agendar uma demo', plan: 'Qual plano encaixa para mim?',
-    whyDemo: 'Com o seu time e o seu objetivo, 30 minutos com o time levam isso para o seu funil e para o plano certo, sem você precisar descobrir sozinho.',
+    whyDemo: 'Com o seu time e o seu objetivo, uma ligação com alguém do time leva isso para o seu funil e para o plano certo, sem você precisar descobrir sozinho.', tooLong: (n) => `Mensagem longa: fiquei com os primeiros ${n} caracteres.`,
     whyBuild: 'Você pode montar hoje mesmo: plano grátis, sem cartão, no ar em uns 15 minutos.', whyPlan: 'Com duas respostas, canal e volume, eu te digo o plano e o preço.',
     planH: 'O plano que encaixa', planWhy: 'Por quê', perMo: '/mês', annual: 'cobrança anual', monthlyP: (p) => `ou ${p} no mensal`, custom: 'Preço sob medida', trial: 'Teste grátis de 14 dias · sem cartão no Free', planSrc: 'Preços de landbot.io/pricing',
     mail: 'Onde o time pode falar com você?', mailSub: 'Respondem em um dia útil, com tudo o que você me contou já na mesa.', mailPh: 'voce@empresa.com', sendIt: 'Enviar', mailBad: 'Isso ainda não parece um e-mail.',
@@ -245,7 +245,7 @@ const DICT = {
       faq: ['Qual plano encaixa? · 2 perguntas', 'Qual plano encaixa para mim?'] },
     k: { why: 'Por que veio', use: 'Objetivo', chan: 'Canal', size: 'Time', vol: 'Volume', crm: 'CRM', country: 'País', from: 'Veio de' }, teamSees: 'O que o time vai ver', direct: 'direto', volU: '/mês', guessed: 'deduzido',
     oneMore: 'Sim, mais uma pergunta', USE: { leads: 'Leads no site', wa: 'WhatsApp', support: 'Suporte' }, CHAN: { web: 'Site', wa: 'WhatsApp', both: 'Site + WhatsApp' },
-    calLoading: 'Carregando o calendário…', bookH: 'Agende 30 min com o time de Landbot', bookSub: 'Escolha o horário que for melhor. Eles vão ter esta conversa em mãos, então ninguém começa do zero.',
+    calLoading: 'Carregando o calendário…', bookH: 'Agende uma ligação com o time de Landbot', bookSub: 'Escolha o horário que for melhor. Eles vão ter esta conversa em mãos, então ninguém começa do zero.',
     demoLang: 'Em qual idioma você quer a demo?', demoLangPT: 'A sua demo vai ser em português.', bookGo: 'Escolher horário →', booked: 'Já agendei', mailInstead: 'Prefiro que me escrevam',
     bookedMsg: 'Ótimo, nos vemos lá. O time vai ter esta conversa em mãos.', freeToo: 'Enquanto a demo não chega, você já pode começar grátis hoje e chegar com algo montado.',
     supH: 'Isso é com o nosso time de suporte', supSub: 'Eles podem olhar a sua conta e resolver mais rápido. A central de ajuda tem guias e um jeito de falar com eles.', supGo: 'Abrir a central de ajuda →', backQ: 'Voltar às minhas perguntas',
@@ -317,6 +317,7 @@ function contextLine() {
   const add = [`page language ${PAGE_LANG}`, `chat language ${LANG}`];
   if (MOBILE) add.push('device mobile');
   if (GEO.cc) add.push(`country ${countryName(GEO.cc, 'en')} (inferred from ${GEO.how}) · geo ${GEO.tier}`);
+  if (GEO.tier === 'C') add.push('no call offers unless they ask: lead with starting free');   // the agent's Demo rule alone kept offering calls to geo C (30-oct)
   if (st.restarted && st.userMsgs && st.userMsgs.length) add.push('conversation continues; earlier the visitor said: ' + st.userMsgs.slice(-5).map((m) => '"' + m.slice(0, 140) + '"').join(' / '));
   const base = window.lbJourney && window.lbJourney.line ? window.lbJourney.line().replace('before this article', 'before the home') : '';
   return base ? base.replace(/\]$/, ' · ' + add.join(' · ') + ']') : '[Page context: ' + add.join(' · ') + ']';
@@ -370,14 +371,14 @@ const LAVA = (cls) => { const id = 'aweGoo' + (++gooN); return `<span class="awe
   <svg viewBox="0 0 300 300"><defs><filter id="${id}"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
   <g filter="url(#${id})"><circle class="g1" cx="150" cy="150" r="52" fill="#F58B0B"/><circle class="g2" cx="178" cy="170" r="40" fill="#636BFC"/><circle class="g3" cx="135" cy="120" r="34" fill="#4FCCC2"/><circle class="g4" cx="120" cy="175" r="28" fill="#FF3F7B"/><circle class="g5" cx="180" cy="125" r="24" fill="#F58B0B"/></g></svg></span>`; };
 const launch = h(`<div id="awe-launch" class="tuck" role="region" aria-label="Landbot AI"><div class="awe-chips" data-awe-starters></div>
-  <form class="awe-pill" data-awe-form><button type="button" data-awe-open style="all:unset;cursor:pointer;border-radius:50%">${LAVA()}</button><input type="text" autocomplete="off"><button type="submit" class="awe-pill-send" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button></form></div>`);
+  <form class="awe-pill" data-awe-form><button type="button" data-awe-open style="all:unset;cursor:pointer;border-radius:50%">${LAVA()}</button><input type="text" autocomplete="off" maxlength="700"><button type="submit" class="awe-pill-send" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button></form></div>`);
 const panel = h(`<aside id="awe-panel" role="dialog" aria-label="Landbot AI" aria-hidden="true">
   <div class="awe-head">${LAVA('sm')}<div class="awe-head-t"><b>Landbot AI</b><span class="awe-status"></span></div>
     <button type="button" class="awe-x" data-awe-reset aria-label="New conversation" title="New conversation">↺</button><button type="button" class="awe-x awe-theme" data-awe-theme aria-label="Theme"></button><button type="button" class="awe-x" data-awe-close aria-label="Close">✕</button></div>
   <div class="awe-facts"><div class="awe-facts-h"><span data-t="facts"></span><span data-t="edit"></span></div><div class="awe-facts-list"></div></div>
   <div class="awe-thread" aria-live="polite"></div>
   <div class="awe-foot"><div class="awe-chips" data-awe-replies></div>
-    <form class="awe-compose" data-awe-form><input type="text" autocomplete="off"><button class="awe-send" type="submit" aria-label="Send">↑</button></form>
+    <form class="awe-compose" data-awe-form><input type="text" autocomplete="off" maxlength="700"><button class="awe-send" type="submit" aria-label="Send">↑</button></form>
     <p data-t="foot"></p></div></aside>`);
 const scrim = h('<div id="awe-scrim" aria-hidden="true"></div>');
 scrim.addEventListener('click', () => closePanel());
@@ -440,8 +441,10 @@ async function skipMail(card) {   // leave the flow's email step: it accepts onl
   card.appendChild(h(`<div class="awe-sub" style="margin-top:8px">${esc(T.mailSkipped)}</div>`));
   st.restarted = true; await restartSession();
 }
+const MAX_MSG = 700;   // longer messages made the agent fail ('something went wrong'): 750 worked, 900 failed on 30-oct; Sales asked for a cap
 async function say(text, payload) {
-  const q = (text || '').trim(); if (!q) return;
+  let q = (text || '').trim(); if (!q) return;
+  const cut = !payload && q.length > MAX_MSG; if (cut) q = q.slice(0, MAX_MSG).trim();
   if (st.more) { const m = st.more; st.more = null; m(false); }
   const pendingMail = thread.querySelector('.awe-mail:not([data-done])');
   if (pendingMail && !payload) {
@@ -452,6 +455,7 @@ async function say(text, payload) {
   openPanel(); repliesEl.innerHTML = '';
   thread.querySelectorAll('.awe-nba').forEach((n) => n.remove());
   push(h(`<div class="awe-me">${esc(q)}</div>`));
+  if (cut) push(h(`<div class="awe-sub" style="text-align:right;margin:-4px 2px 6px">${esc(T.tooLong(MAX_MSG.toLocaleString(LANG === 'en' ? 'en' : 'es')))}</div>`));
   if (!payload) followLang(q); readUser(q); setWorking(guessSection(q));
   let out = q;
   if (!st.ctxSent && !payload) { st.ctxSent = true; out = contextLine() + '\n\n' + q; }
@@ -511,6 +515,7 @@ async function handleMsg(m, ex, bid) {
     if (clean) { await agentText(clean); st.answers++; }
     repliesEl.innerHTML = m.buttons.map((b) => `<button type="button" class="awe-chip" data-awe-say="${esc(b)}">${esc(b)}</button>`).join('');
     maybePlan(ex);
+    if (clean && !m.buttons.some((b) => /demo|call|llamada|ligação/i.test(b))) decide(clean, true);   // the card still offers the demo when the agent's buttons don't
     return;
   }
   if (text) { await agentText(text); st.answers++; maybePlan(ex); decide(text); }
@@ -716,17 +721,19 @@ function planCard() {
   if (st.planEl && st.planEl.isConnected) st.planEl.replaceWith(card); else push(card);
   st.planEl = card; st.plan = p;
 }
-function fitDemo() {
-  const f = st.facts, size = f.size ? f.size.v : 0;
-  if (tierNow() === 'C') return false;
-  return size >= 10 || !!f.crm || (f.vol && f.vol.v >= 1000) || st.plan === 'biz' || st.plan === 'prowa';
+// same rule as the agent's Demo rule (Sales, 30-oct): not tier C + any business use, team, CRM, volume or buying signal → demo after the first reply
+function qualifies() {
+  const f = st.facts;
+  return tierNow() !== 'C' && !!(f.use || f.size || f.crm || f.vol || st.hot);
 }
-function decide(lastText) {
+function decide(lastText, keepChips) {
   st.lastText = lastText;
-  if (st.teamDone || /\?\s*$/.test(splitSources(lastText || '').body.replace(/[*_\s]+$/, '')) || st.awaiting === 'why') return;
+  const body = splitSources(lastText || '').body.replace(/[*_\s]+$/, ''), q = qualifies();
+  const offersCall = q && /call|demo|llamada|reuni|ligação|chamada/i.test(body.split('\n').pop());   // the agent's call offer ends in '?', so let the card show then
+  if (st.teamDone || (/\?\s*$/.test(body) && !offersCall && !(q && st.answers >= 1)) || st.awaiting === 'why') return;   // qualified: the demo card shows even under a question (Sales, 30-oct)
   let n = null;
   const small = (st.facts.size && st.facts.size.v < 10) || tierNow() === 'C';
-  if (st.hot >= 1 && st.answers >= 3 && fitDemo()) n = { k: 'demo', p: 'demo', s: ['build'], why: T.whyDemo };          // high intent + fit, after real value
+  if (q && st.answers >= 1) n = { k: 'demo', p: 'demo', s: ['build'], why: T.whyDemo };          // qualified: demo from the first reply
   else if (st.answers >= 2 || st.items.size) n = { k: 'build', p: 'build', s: small ? [] : ['demo'], why: T.whyBuild };   // email is only taken in the demo path (Fabo, 5-oct)
   if (!n || n.k === st.nbaKey) return;
   st.nbaKey = n.k;
@@ -737,7 +744,7 @@ function decide(lastText) {
   push(h(`<div class="awe-card awe-nba"><span class="awe-tag act">${esc(T.nba)}</span>
     <div class="awe-why" style="margin-top:0"><b>${esc(T.why)}:</b> ${esc(n.why)}</div>
     ${btn(n.p, true)}${n.s.length ? `<div class="awe-alt">${n.s.map((a) => esc(T.or) + ' ' + btn(a, false)).join(' · ')}</div>` : ''}</div>`));
-  repliesEl.innerHTML = '';
+  if (!keepChips) repliesEl.innerHTML = '';
 }
 function act(a) { if (a === 'demo') say(T.msgDemo); else if (a === 'plan') say(T.msgPlan); else if (a === 'mail') { st.mailMode = 'send'; say(T.msgMail); } else if (a === 'team') { st.mailMode = 'team'; say(T.msgTeamMail); } }
 function emailCard() {
