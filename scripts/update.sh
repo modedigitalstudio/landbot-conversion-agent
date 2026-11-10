@@ -19,6 +19,8 @@ for dir in "$@"; do
   [ ${#files[@]} -gt 0 ] || { echo "No lb-awe-*.txt in $dir"; exit 1; }
   for f in "${files[@]}"; do
     name="$(basename "${f%.*}").js"
+    # packages often ship the same bundle as both .txt and .js: take it once
+    case " ${changed[*]-} " in *" $name: "*) continue ;; esac
     cp "$f" "bundles/$name"
     changed+=("$name: $(head -1 "$f" | sed -E 's#^/\* *##; s# *\*/$##')")
   done
@@ -34,7 +36,7 @@ done
 
 git add -A bundles webflow
 if git diff --cached --quiet; then echo "Nothing changed: these files are already on staging."; exit 0; fi
-msg="Update $(printf '%s\n' "${changed[@]}" | cut -d: -f1 | sed 's/\.js$//' | paste -sd ', ' -)"
+msg="Update $(printf '%s\n' "${changed[@]}" | cut -d: -f1 | sed 's/\.js$//' | paste -sd ',' - | sed 's/,/, /g')"
 git commit -q -m "$msg" -m "$(printf '%s\n' "${changed[@]}")"
 git push -q origin staging
 echo "✅ Pushed to staging: $msg"
