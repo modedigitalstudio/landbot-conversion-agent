@@ -130,7 +130,7 @@ const SECTIONS = [
 const DICT = {
   en: { rec: 'You’re reading about <b>the October change</b>. I can’t quote a rate this article doesn’t publish, and I’m not an adviser, but with its numbers I can <b>size your bill</b> and tell you which conversations to take off WhatsApp. About two minutes.',
     back: 'Welcome back. ', ph: 'Ask what October means for you…', phBar: 'Ask what this section means for you', phPanel: 'Ask a follow-up', guess: 'guessed from your time zone', change: 'change',
-    reading: 'Reading', theArticle: 'the article', online: 'Online · answers only from this post', working: 'Working on it', facts: 'What I’ve understood', edit: 'tap to correct',
+    reading: 'Reading', theArticle: 'the article', online: 'Online', working: 'Working on it', facts: 'What I’ve understood', edit: 'tap to correct',
     est: 'Your delivery bill from Oct 1', per: '/ month', estSub: (v, r, c) => `${v} replies × $${r} (${c}) · delivery only`, estWhy: '+ your AI provider if AI writes the replies. Meta’s own Brazil example: ~$27–$97 per 1,000 AI replies.',
     notIn: (c) => `${c} isn’t in this article`, notInSub: 'The article only publishes Brazil, Spain and the UK. Your rate is on Meta’s rate card for your country.', checkMeta: 'Check Meta’s rate card ↗',
     nba: 'What makes most sense now', why: 'Why', or: 'or',
@@ -150,7 +150,7 @@ const DICT = {
     k: { vol: 'Volume', country: 'Country', who: 'Replies by', score: 'Eviction score', use: 'Main use', from: 'Came from', why: 'Why here' }, teamSees: 'What the team will see', direct: 'direct', perMo: '/mo', human: 'Humans', ai: 'AI', oneMore: 'Yes, one more question', morph: (v, c, x) => `At ~${v} replies a month in ${c}, that’s ≈ ${x}/mo in delivery alone. Qualify on your own site first; hand off to WhatsApp when it pays.` },
   es: { rec: 'Estás leyendo sobre <b>el cambio de octubre</b>. No puedo darte una tarifa que el artículo no publica, y no soy asesor, pero con sus números puedo <b>calcular tu factura</b> y decirte qué conversaciones sacar de WhatsApp. Unos dos minutos.',
     back: 'Hola de nuevo. ', ph: 'Pregunta qué significa octubre para ti…', phBar: 'Pregunta qué significa esta sección para ti', phPanel: 'Haz otra pregunta', guess: 'deducido de tu zona horaria', change: 'cambiar',
-    reading: 'Leyendo', theArticle: 'el artículo', online: 'En línea · responde solo con este post', working: 'Trabajando en ello', facts: 'Lo que he entendido', edit: 'toca para corregir',
+    reading: 'Leyendo', theArticle: 'el artículo', online: 'En línea', working: 'Trabajando en ello', facts: 'Lo que he entendido', edit: 'toca para corregir',
     est: 'Tu factura de envío desde el 1 de octubre', per: '/ mes', estSub: (v, r, c) => `${v} respuestas × $${r} (${c}) · solo envío`, estWhy: '+ tu proveedor de IA si una IA escribe las respuestas. El ejemplo de Meta para Brasil: ~$27–$97 por cada 1.000 respuestas con IA.',
     notIn: (c) => `${c} no aparece en este artículo`, notInSub: 'El artículo solo publica Brasil, España y Reino Unido. Tu tarifa está en el rate card de Meta para tu país.', checkMeta: 'Ver el rate card de Meta ↗',
     nba: 'Lo que tiene más sentido ahora', why: 'Por qué', or: 'o',
@@ -170,7 +170,7 @@ const DICT = {
     k: { vol: 'Volumen', country: 'País', who: 'Responde', score: 'Eviction score', use: 'Uso principal', from: 'Vino de', why: 'Por qué vino' }, teamSees: 'Lo que verá el equipo', direct: 'directo', perMo: '/mes', human: 'Personas', ai: 'IA', oneMore: 'Sí, una pregunta más', morph: (v, c, x) => `Con ~${v} respuestas al mes en ${c}, son ≈ ${x}/mes solo en envío. Cualifica primero en tu web; pasa a WhatsApp cuando compense.` },
   pt: { rec: 'Estás a ler sobre <b>a mudança de outubro</b>. Não posso dar uma tarifa que o artigo não publica, e não sou consultor, mas com os números dele posso <b>calcular a tua fatura</b> e dizer que conversas tirar do WhatsApp. Uns dois minutos.',
     back: 'Bem-vindo de volta. ', ph: 'Pergunta o que outubro significa para ti…', phBar: 'Pergunta o que esta secção significa para ti', phPanel: 'Faz outra pergunta', guess: 'deduzido do teu fuso horário', change: 'mudar',
-    reading: 'A ler', theArticle: 'o artigo', online: 'Online · responde só com este post', working: 'A trabalhar nisso', facts: 'O que percebi', edit: 'toca para corrigir',
+    reading: 'A ler', theArticle: 'o artigo', online: 'Online', working: 'A trabalhar nisso', facts: 'O que percebi', edit: 'toca para corrigir',
     est: 'A tua fatura de envio a partir de 1 de outubro', per: '/ mês', estSub: (v, r, c) => `${v} respostas × $${r} (${c}) · só envio`, estWhy: '+ o teu fornecedor de IA se uma IA escrever as respostas. O exemplo da Meta para o Brasil: ~$27–$97 por cada 1.000 respostas com IA.',
     notIn: (c) => `${c} não aparece neste artigo`, notInSub: 'O artigo só publica Brasil, Espanha e Reino Unido. A tua tarifa está no rate card da Meta para o teu país.', checkMeta: 'Ver o rate card da Meta ↗',
     nba: 'O que faz mais sentido agora', why: 'Porquê', or: 'ou',
@@ -313,7 +313,7 @@ const STARTERS = { en: ['What will it cost me?', 'What exactly changes?', 'Am I 
 const starterChips = () => STARTERS[LANG].map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
 let gooN = 0;
 const LAVA = (cls) => { const id = 'aweGoo' + (++gooN); return `<span class="awe-lava ${cls || ''}" aria-hidden="true">
-  <svg viewBox="0 0 300 300"><defs><filter id="${id}"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
+  <svg viewBox="0 0 300 300"><defs><filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
   <g filter="url(#${id})"><circle class="g1" cx="150" cy="150" r="52" fill="#F58B0B"/><circle class="g2" cx="178" cy="170" r="40" fill="#636BFC"/><circle class="g3" cx="135" cy="120" r="34" fill="#4FCCC2"/><circle class="g4" cx="120" cy="175" r="28" fill="#FF3F7B"/><circle class="g5" cx="180" cy="125" r="24" fill="#F58B0B"/></g></svg></span>`; };
 const launch = h(`<div id="awe-launch" role="region" aria-label="Landbot AI"><div class="awe-chips" data-awe-starters></div>
   <form class="awe-pill" data-awe-form><button type="button" data-awe-open style="all:unset;cursor:pointer;border-radius:50%">${LAVA()}</button><input type="text" autocomplete="off"><button type="submit" class="awe-pill-send" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button></form></div>`);
@@ -324,7 +324,7 @@ const panel = h(`<aside id="awe-panel" role="dialog" aria-label="Landbot AI" ari
   <div class="awe-thread" aria-live="polite"></div>
   <div class="awe-foot"><div class="awe-chips" data-awe-replies></div>
     <form class="awe-compose" data-awe-form><input type="text" autocomplete="off"><button class="awe-send" type="submit" aria-label="Send">↑</button></form>
-    <p data-t="foot"></p></div></aside>`);
+    <!-- foot note removed 10-nov-2026: it was for us, not for the visitor (Fabo) --></div></aside>`);
 const scrim = h('<div id="awe-scrim" aria-hidden="true"></div>');
 scrim.addEventListener('click', () => closePanel());
 document.body.appendChild(scrim); document.body.appendChild(panel); document.body.appendChild(launch);
@@ -364,7 +364,7 @@ function setWorking(label) {
   thread.querySelectorAll('.awe-working').forEach((n) => n.remove());
   if (!label) { statusEl.textContent = T.online; statusEl.classList.remove('work'); headOrb.classList.remove('work'); return; }
   statusEl.textContent = T.working + '…'; statusEl.classList.add('work'); headOrb.classList.add('work');
-  push(h(`<div class="awe-working"><span class="awe-orb sm work" aria-hidden="true"></span><span>${esc(T.reading)} ${esc(label)}…</span></div>`));
+  push(h(`<div class="awe-working"><span class="awe-orb sm work" aria-hidden="true"></span></div>`));   // orb only: no "Reading …" label (Fabo, 10-nov-2026)
 }
 function guessSection(q) {
   if (/cost|price|pay|bill|cuest|cost|precio|pag|factur|custa|preç|estimat|calcul/i.test(q)) return '“Why 1.59p isn’t your real cost”';
@@ -614,7 +614,7 @@ function factVal(k, o) { return k === 'vol' ? fmt(o.v) + T.perMo : k === 'countr
 function renderFacts() {
   const box = panel.querySelector('.awe-facts'), list = panel.querySelector('.awe-facts-list');
   const keys = FACT_ORDER.filter((k) => st.facts[k]);
-  box.classList.toggle('on', keys.length > 0 && Object.keys(st.facts).some((k) => !st.facts[k].guess) || keys.length > 1);
+  box.classList.remove('on'); /* 10-nov (Fabo): the strip stays hidden; facts still feed the plan card and the summary */
   list.innerHTML = keys.map((k) => `<button type="button" class="awe-fact${st.facts[k].guess ? ' guess' : ''}" data-awe-fact="${k}"><i>${esc(T.k[k])}</i>${esc(factVal(k, st.facts[k]))}</button>`).join('');
 }
 function editFact(btn) {

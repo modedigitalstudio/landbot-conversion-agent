@@ -161,7 +161,7 @@ const AGENTS = {
 const NEED_AGENT = { wismo: 8, returns: 9, promo: 5, sizes: 4, carts: 6, gifts: 3, ads: 2, vip: 1, upsell: 7, b2b: 10 };
 const DICT = {
   en: { rec: 'You’re reading <b>10 AI agents for Black Friday</b>. Tell me what hurt most last November (lost sales or support load) and I’ll pick <b>the two or three to launch first</b>, each with a live demo to try.',
-    back: 'Welcome back. ', phPanel: 'Ask a follow-up', reading: 'Reading', theArticle: 'the ten agents', online: 'Online · answers only from this post', working: 'Working on it', oops: 'Something went wrong reaching the agent. Try again in a moment.',
+    back: 'Welcome back. ', phPanel: 'Ask a follow-up', reading: 'Reading', theArticle: 'the ten agents', online: 'Online', working: 'Working on it', oops: 'Something went wrong reaching the agent. Try again in a moment.',
     facts: 'What I’ve understood', edit: 'tap to correct', nba: 'What makes most sense now', why: 'Why', or: 'or',
     build: 'Start building free →', team: 'Talk to the team', plan: 'Pick my agents',
     whyPlan: 'Two answers and I’ll cut the ten down to the two or three that fix your biggest bottleneck, with a demo of each.',
@@ -185,7 +185,7 @@ const DICT = {
     k: { picks: 'Shortlist', reasons: 'Bottleneck', chan: 'Channels', vol: 'November volume', from: 'Came from', why: 'Why here' }, teamSees: 'What the team will see', direct: 'direct', perMo: ' /mo', oneMore: 'Yes, one more question',
     calLoading: 'Loading the calendar…', bookH: 'Book 30 min with the Landbot team', bookSub: 'Pick a slot that suits you. They’ll have this conversation on hand, so no starting from zero.', bookGo: 'Choose a time →', booked: 'I’ve booked a time', mailInstead: 'Email me instead', bookedMsg: 'Great, see you there. The team will have this conversation on hand.', supH: 'This one’s for our support team', supSub: 'They can look at your account and sort it fastest. The help center has guides and a way to reach them.', supGo: 'Open the help center →', backArt: 'Back to the article' },
   es: { rec: 'Estás leyendo <b>10 agentes de IA para Black Friday</b>. Cuéntame qué te dolió más el noviembre pasado (ventas perdidas o carga de soporte) y te elijo <b>los dos o tres que lanzar primero</b>, cada uno con una demo en vivo.',
-    back: 'Hola de nuevo. ', phPanel: 'Haz otra pregunta', reading: 'Leyendo', theArticle: 'los diez agentes', online: 'En línea · responde solo con este artículo', working: 'Trabajando en ello', oops: 'Algo ha fallado al contactar con el agente. Prueba de nuevo en un momento.',
+    back: 'Hola de nuevo. ', phPanel: 'Haz otra pregunta', reading: 'Leyendo', theArticle: 'los diez agentes', online: 'En línea', working: 'Trabajando en ello', oops: 'Algo ha fallado al contactar con el agente. Prueba de nuevo en un momento.',
     facts: 'Lo que he entendido', edit: 'toca para corregir', nba: 'Lo que tiene más sentido ahora', why: 'Por qué', or: 'o',
     build: 'Empezar gratis →', team: 'Hablar con el equipo', plan: 'Elegir mis agentes',
     whyPlan: 'Con dos respuestas reduzco los diez a los dos o tres que arreglan tu mayor cuello de botella, con la demo de cada uno.',
@@ -209,7 +209,7 @@ const DICT = {
     k: { picks: 'Shortlist', reasons: 'Cuello de botella', chan: 'Canales', vol: 'Volumen en noviembre', from: 'Vino de', why: 'Por qué vino' }, teamSees: 'Lo que verá el equipo', direct: 'directo', perMo: ' /mes', oneMore: 'Sí, una pregunta más',
     calLoading: 'Cargando el calendario…', bookH: 'Reserva 30 min con el equipo de Landbot', bookSub: 'Elige el hueco que mejor te venga. Tendrán esta conversación a mano, así que no empiezas de cero.', bookGo: 'Elegir hora →', booked: 'Ya he reservado', mailInstead: 'Prefiero que me escribáis', bookedMsg: 'Genial, nos vemos ahí. El equipo tendrá esta conversación a mano.', supH: 'Esto es cosa de nuestro equipo de soporte', supSub: 'Pueden mirar tu cuenta y resolverlo antes. En el centro de ayuda tienes guías y cómo contactarles.', supGo: 'Abrir el centro de ayuda →', backArt: 'Volver al artículo' },
   pt: { rec: 'Você está lendo <b>10 agentes de IA para a Black Friday</b>. Me conta o que mais doeu no último novembro (vendas perdidas ou carga de atendimento) e eu escolho <b>os dois ou três para lançar primeiro</b>, cada um com uma demo ao vivo.',
-    back: 'Que bom te ver de novo. ', phPanel: 'Faça outra pergunta', reading: 'Lendo', theArticle: 'os dez agentes', online: 'Online · responde só com este artigo', working: 'Trabalhando nisso', oops: 'Algo deu errado ao falar com o agente. Tente de novo em um instante.',
+    back: 'Que bom te ver de novo. ', phPanel: 'Faça outra pergunta', reading: 'Lendo', theArticle: 'os dez agentes', online: 'Online', working: 'Trabalhando nisso', oops: 'Algo deu errado ao falar com o agente. Tente de novo em um instante.',
     facts: 'O que eu entendi', edit: 'toque para corrigir', nba: 'O que faz mais sentido agora', why: 'Por quê', or: 'ou',
     build: 'Começar grátis →', team: 'Falar com a equipe', plan: 'Escolher meus agentes',
     whyPlan: 'Com duas respostas eu reduzo os dez aos dois ou três que resolvem o seu maior gargalo, com a demo de cada um.',
@@ -344,7 +344,7 @@ const STARTERS = { en: ['Pick my 2–3 agents', 'Which one pays off first?', 'Ca
 const starterChips = () => STARTERS[LANG].map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
 let gooN = 0;
 const LAVA = (cls) => { const id = 'aweGoo' + (++gooN); return `<span class="awe-lava ${cls || ''}" aria-hidden="true">
-  <svg viewBox="0 0 300 300"><defs><filter id="${id}"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
+  <svg viewBox="0 0 300 300"><defs><filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
   <g filter="url(#${id})"><circle class="g1" cx="150" cy="150" r="52" fill="#F58B0B"/><circle class="g2" cx="178" cy="170" r="40" fill="#636BFC"/><circle class="g3" cx="135" cy="120" r="34" fill="#4FCCC2"/><circle class="g4" cx="120" cy="175" r="28" fill="#FF3F7B"/><circle class="g5" cx="180" cy="125" r="24" fill="#F58B0B"/></g></svg></span>`; };
 const launch = h(`<div id="awe-launch" role="region" aria-label="Landbot AI"><div class="awe-chips" data-awe-starters></div>
   <form class="awe-pill" data-awe-form><button type="button" data-awe-open style="all:unset;cursor:pointer;border-radius:50%">${LAVA()}</button><input type="text" autocomplete="off"><button type="submit" class="awe-pill-send" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button></form></div>`);
@@ -355,7 +355,7 @@ const panel = h(`<aside id="awe-panel" role="dialog" aria-label="Landbot AI" ari
   <div class="awe-thread" aria-live="polite"></div>
   <div class="awe-foot"><div class="awe-chips" data-awe-replies></div>
     <form class="awe-compose" data-awe-form><input type="text" autocomplete="off"><button class="awe-send" type="submit" aria-label="Send">↑</button></form>
-    <p data-t="foot"></p></div></aside>`);
+    <!-- foot note removed 10-nov-2026: it was for us, not for the visitor (Fabo) --></div></aside>`);
 const scrim = h('<div id="awe-scrim" aria-hidden="true"></div>');
 scrim.addEventListener('click', () => closePanel());
 document.body.appendChild(scrim); document.body.appendChild(panel); document.body.appendChild(launch);
@@ -397,7 +397,7 @@ function setWorking(label) {
   thread.querySelectorAll('.awe-working').forEach((n) => n.remove());
   if (!label) { statusEl.textContent = T.online; statusEl.classList.remove('work'); headOrb.classList.remove('work'); return; }
   statusEl.textContent = T.working + '…'; statusEl.classList.add('work'); headOrb.classList.add('work');
-  push(h(`<div class="awe-working"><span class="awe-orb sm work" aria-hidden="true"></span><span>${esc(T.reading)} ${esc(label)}…</span></div>`));
+  push(h(`<div class="awe-working"><span class="awe-orb sm work" aria-hidden="true"></span></div>`));   // orb only: no "Reading …" label (Fabo, 10-nov-2026)
 }
 const secLabel = (id) => { const s = SECTIONS.find((x) => x[0] === id); return s ? '“' + (s[2][LANG] || s[2].en) + '”' : T.theArticle; };
 function guessSection(q) {
@@ -594,7 +594,7 @@ function factVal(k, o) { return k === 'vol' ? fmt(o.v) + T.perMo : o.v; }
 function renderFacts() {
   const box = panel.querySelector('.awe-facts'), list = panel.querySelector('.awe-facts-list');
   const keys = FACT_ORDER.filter((k) => st.facts[k]);
-  box.classList.toggle('on', keys.some((k) => !st.facts[k].guess));
+  box.classList.remove('on'); /* 10-nov (Fabo): the strip stays hidden; facts still feed the plan card and the summary */
   list.innerHTML = keys.map((k) => `<button type="button" class="awe-fact${st.facts[k].guess ? ' guess' : ''}" data-awe-fact="${k}"><i>${esc(T.k[k])}</i>${esc(factVal(k, st.facts[k]))}</button>`).join('');
 }
 function editFact(btn) {

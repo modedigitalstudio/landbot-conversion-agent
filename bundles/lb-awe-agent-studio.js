@@ -90,7 +90,7 @@ const secEl = (id) => { const s = SECTIONS.find((x) => x[0] === id); return !s ?
 
 const DICT = {
   en: { rec: 'Tell me what you’d want an agent to <b>move</b> for your business: I’ll sketch what we’d build, how the first month goes, and tell you honestly whether you need us or should build it yourself.',
-    back: 'Welcome back. ', phPanel: 'Ask a follow-up', reading: 'Reading', theSite: 'this page', online: 'Online · answers from this page', working: 'Working on it',
+    back: 'Welcome back. ', phPanel: 'Ask a follow-up', reading: 'Reading', theSite: 'this page', online: 'Online', working: 'Working on it',
     facts: 'What I’ve understood', edit: 'tap to correct', nba: 'What makes most sense now', why: 'Why', or: 'or',
     build: 'Start building free →', demo: 'Book the 30-min call', fit: 'Is Agent Studio for me?',
     whyDemo: '30 minutes with a Solution Engineer: a diagnosis, not a demo. You leave with a straight recommendation, including “build it yourself”.',
@@ -125,7 +125,7 @@ const DICT = {
     themeL: 'Light mode', themeD: 'Dark mode', sent: 'Cards seen',
     starters: ['Is Agent Studio for me?', 'Sketch my agent', 'How the first month works'] },
   es: { rec: 'Cuéntame qué querrías que un agente <b>moviera</b> en tu negocio: te esbozo lo que construiríamos, cómo va el primer mes, y te digo con honestidad si nos necesitas o te conviene construirlo tú.',
-    back: 'Hola de nuevo. ', phPanel: 'Haz otra pregunta', reading: 'Leyendo', theSite: 'esta página', online: 'En línea · responde con esta página', working: 'Trabajando en ello',
+    back: 'Hola de nuevo. ', phPanel: 'Haz otra pregunta', reading: 'Leyendo', theSite: 'esta página', online: 'En línea', working: 'Trabajando en ello',
     facts: 'Lo que he entendido', edit: 'toca para corregir', nba: 'Lo que tiene más sentido ahora', why: 'Por qué', or: 'o',
     build: 'Empezar gratis →', demo: 'Reservar la llamada de 30 min', fit: '¿Agent Studio es para mí?',
     whyDemo: '30 minutos con un Solution Engineer: un diagnóstico, no una demo. Sales con una recomendación directa, incluida «constrúyelo tú».',
@@ -160,7 +160,7 @@ const DICT = {
     themeL: 'Modo claro', themeD: 'Modo oscuro', sent: 'Tarjetas vistas',
     starters: ['¿Agent Studio es para mí?', 'Esbózame mi agente', 'Cómo va el primer mes'] },
   pt: { rec: 'Conte-me o que gostaria que um agente <b>movesse</b> no seu negócio: esboço o que construiríamos, como corre o primeiro mês, e digo-lhe com honestidade se precisa de nós ou se é melhor construir você mesmo.',
-    back: 'Que bom vê-lo de novo. ', phPanel: 'Faça outra pergunta', reading: 'A ler', theSite: 'esta página', online: 'Online · responde com esta página', working: 'A trabalhar nisso',
+    back: 'Que bom vê-lo de novo. ', phPanel: 'Faça outra pergunta', reading: 'A ler', theSite: 'esta página', online: 'Online', working: 'A trabalhar nisso',
     facts: 'O que entendi', edit: 'toque para corrigir', nba: 'O que faz mais sentido agora', why: 'Porquê', or: 'ou',
     build: 'Começar grátis →', demo: 'Agendar a chamada de 30 min', fit: 'Agent Studio é para mim?',
     whyDemo: '30 minutos com um Solution Engineer: um diagnóstico, não uma demo. Sai com uma recomendação direta, incluindo «construa você».',
@@ -296,7 +296,7 @@ async function deliver(text, payload) {
 const starterChips = () => T.starters.map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
 let gooN = 0;
 const LAVA = (cls) => { const id = 'aweGoo' + (++gooN); return `<span class="awe-lava ${cls || ''}" aria-hidden="true">
-  <svg viewBox="0 0 300 300"><defs><filter id="${id}"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
+  <svg viewBox="0 0 300 300"><defs><filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
   <g filter="url(#${id})"><circle class="g1" cx="150" cy="150" r="52" fill="#F58B0B"/><circle class="g2" cx="178" cy="170" r="40" fill="#636BFC"/><circle class="g3" cx="135" cy="120" r="34" fill="#4FCCC2"/><circle class="g4" cx="120" cy="175" r="28" fill="#FF3F7B"/><circle class="g5" cx="180" cy="125" r="24" fill="#F58B0B"/></g></svg></span>`; };
 const launch = h(`<div id="awe-launch" class="tuck" role="region" aria-label="Landbot AI"><div class="awe-chips" data-awe-starters></div>
   <form class="awe-pill" data-awe-form><button type="button" data-awe-open style="all:unset;cursor:pointer;border-radius:50%">${LAVA()}</button><input type="text" autocomplete="off"><button type="submit" class="awe-pill-send" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button></form></div>`);
@@ -307,7 +307,7 @@ const panel = h(`<aside id="awe-panel" role="dialog" aria-label="Landbot AI" ari
   <div class="awe-thread" aria-live="polite"></div>
   <div class="awe-foot"><div class="awe-chips" data-awe-replies></div>
     <form class="awe-compose" data-awe-form><input type="text" autocomplete="off"><button class="awe-send" type="submit" aria-label="Send">↑</button></form>
-    <p data-t="foot"></p></div></aside>`);
+    <!-- foot note removed 10-nov-2026: it was for us, not for the visitor (Fabo) --></div></aside>`);
 const scrim = h('<div id="awe-scrim" aria-hidden="true"></div>');
 scrim.addEventListener('click', () => closePanel());
 document.body.appendChild(scrim); document.body.appendChild(panel); document.body.appendChild(launch);
@@ -345,7 +345,7 @@ function setWorking(label) {
   thread.querySelectorAll('.awe-working').forEach((n) => n.remove());
   if (!label) { statusEl.textContent = T.online; statusEl.classList.remove('work'); headOrb.classList.remove('work'); return; }
   statusEl.textContent = T.working + '…'; statusEl.classList.add('work'); headOrb.classList.add('work');
-  push(h(`<div class="awe-working">${thinkHTML(T.reading + ' ' + label + '…')}</div>`));
+  push(h(`<div class="awe-working">${thinkHTML('')}</div>`));   // orb + dots only: no "Reading landbot.io…" label (Fabo, 10-nov-2026)
 }
 /* thinking = the lava orb (faster, .work) + three dots; the label says what it is reading */
 const thinkHTML = (label) => `<div class="awe-think" aria-hidden="true">${LAVA('xs work')}<div class="awe-typing"><i></i><i></i><i></i></div>${label ? `<span class="awe-think-l">${esc(label)}</span>` : ''}</div>`;
@@ -588,7 +588,7 @@ function factVal(k, o) {
 function renderFacts() {
   const box = panel.querySelector('.awe-facts'), list = panel.querySelector('.awe-facts-list');
   const keys = FACT_ORDER.filter((k) => st.facts[k]);
-  box.classList.toggle('on', keys.some((k) => !st.facts[k].guess));
+  box.classList.remove('on'); /* 10-nov (Fabo): the strip stays hidden; facts still feed the plan card and the summary */
   list.innerHTML = keys.map((k) => `<button type="button" class="awe-fact${st.facts[k].guess ? ' guess' : ''}" data-awe-fact="${k}"><i>${esc(T.k[k])}</i>${esc(factVal(k, st.facts[k]))}</button>`).join('');
 }
 function editFact(btn) {
