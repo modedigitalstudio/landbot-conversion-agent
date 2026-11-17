@@ -1,4 +1,4 @@
-/* Landbot Conversion Agent Master · pricing (/pricing) · built 2026-11-10 */
+/* Landbot Conversion Agent Master · pricing (/pricing) · built 2026-11-17 */
 /* lb-journey · first-party record of how a visitor moves through the site, for the Conversion Agent's handoff.
    Runs on every page of the site. Records ONLY after analytics consent (CookieFirst "performance").
    Stores in this browser only (localStorage "lb-journey-v1"): referrer host, UTMs, landing page, pages with time and scroll,
@@ -358,10 +358,33 @@ async function restartSession() {
   Object.assign(st, { boot: null, core: null, greeted: false, ctxSent: false, flowBtns: null, greetBtns: null, chain: Promise.resolve() });
 }
 /* the booking's Calendly references ride on the next message as custom_data, so the bot can look the invitee up (Xavi, 8-oct-2026) */
-function withData(m) { const d = st.nextData; st.nextData = null; if (d) m.custom_data = d; return m; }
+function withData(m) { const d = st.nextData; st.nextData = null; m.custom_data = Object.assign({ conversation_summary: pageSummary(), visitor_journey: pageJourney() }, d || {}); return m; }
+/* The summary for sales is built here, not by the agent: the agent rewriting it on every turn added ~4-6 s to each reply (test 17-nov-2026).
+   It rides on every message as custom_data, so whatever turn the agent exits on, the bot already holds @conversation_summary and @visitor_journey
+   for the sales email, Slack and the note. */
+function pageSummary() {
+  const f = st.facts || {}, P = [];
+  const msgs = (st.userMsgs || []).map((m) => m.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (msgs.length) P.push('Visitor said: ' + msgs.slice(-6).map((m) => '"' + (m.length > 180 ? m.slice(0, 177) + '…' : m) + '"').join(' / '));
+  if (f.why) P.push('Why now: ' + f.why.v);
+  const facts = FACT_ORDER.filter((k) => f[k] && !['why', 'from'].includes(k)).map((k) => k + ': ' + factVal(k, f[k]));
+  if (st.plan) facts.push('plan shown: ' + PLAN_COPY.en[st.plan][0]);
+  if (facts.length) P.push(facts.join(' · '));
+  if (st.items && st.items.size) P.push('Sent in chat: ' + [...st.items].join(', '));
+  if (st.demoLang) P.push('Demo language: ' + st.demoLang);
+  try { const e = estimateLine(); if (e) P.push(e.replace(/^\[|\]$/g, '')); } catch (_) {}   // the bill the page computed from the prices the visitor sees
+  P.push('Page: ' + location.pathname + ' (' + PAGE_LANG + '), chat in ' + LANG);
+  return P.join('. ').slice(0, 1200);
+}
+function pageJourney() {
+  const d = J(); if (!d) return '';
+  return [(d.from === 'direct' ? 'direct' : d.from) + (d.campaign ? ' · ' + d.campaign : ''), d.before && d.before.length ? d.before.join(' → ') : '', 'visit #' + (d.visit || 1)].filter(Boolean).join(' | ');
+}
 const calRefs = (d) => { const p = (d && d.payload) || {}; return { calendly_invitee: (p.invitee && p.invitee.uri) || '', calendly_event: (p.event && p.event.uri) || '' }; };
 async function deliver(text, payload) {
   await boot();
+  if (payload && st.salesReady) await st.salesReady;   // a booking button waits until the bot is really at sales_book
+  if (payload && st.salesMissed) await reroute();
   const list = st.flowBtns || st.greetBtns;   // the buttons of the LAST fixed block, not the greeting's (both use $0, $1…)
   const btn = payload && list && list.find((b) => b.payload === payload);
   /* the payload moves the flow; the label is the visitor's own words, so the agent keeps their language */
@@ -369,7 +392,10 @@ async function deliver(text, payload) {
 }
 
 /* ---------- UI: lava orb bar, layer ---------- */
-const starterChips = () => T.starters.map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
+/* geo C: the opening chips never offer the demo or sales (sales rule: tier C → only if they ask). GEO is known from the start;
+   BOOK_N / tierNow() are defined further down, so the starters use their own list. */
+const STARTER_SALES = /^(book a demo|talk to sales|reservar una demo|hablar con ventas|agendar uma demo|falar com vendas)$/i;
+const starterChips = () => T.starters.filter((l) => !(GEO.tier === 'C' && STARTER_SALES.test(l.trim()))).map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
 let gooN = 0;
 const LAVA = (cls) => { const id = 'aweGoo' + (++gooN); return `<span class="awe-lava ${cls || ''}" aria-hidden="true">
   <svg viewBox="0 0 300 300"><defs><filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
@@ -461,6 +487,128 @@ async function skipMail(card) {   // leave the flow's email step: it accepts onl
   card.appendChild(h(`<div class="awe-sub" style="margin-top:8px">${esc(T.mailSkipped)}</div>`));
   st.restarted = true; await restartSession();
 }
+/* Booking chips go straight to the booking card (17-nov-2026: the visitor waited ~10-16 s for the agent to route "Talk to Sales").
+   The chip text still goes to the agent, so the bot moves to sales_book in the background; booking buttons wait for that.
+   If the agent answers instead of routing, its reply is shown and the bot is routed again before any booking button is sent. */
+const BOOK_CHIPS = new Set(['book a demo', 'talk to sales', 'reservar una demo', 'hablar con ventas', 'agendar uma demo', 'falar com vendas',
+  'i’d like to book a demo.', 'quiero reservar una demo.', 'quero agendar uma demo.']);   // starters + the "Book a demo" button of the next-step card (T.msgDemo)
+/* typed variants count too: lower case, no accents, no ¿?¡! or quotes ("como landbot puede ayudarme" = the chip). Whole-phrase match only, never a substring. */
+const normQ = (s) => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[¿?¡!.,;:"“”'’]/g, ' ').replace(/\s+/g, ' ').trim();
+const nSet = (xs) => new Set(xs.map(normQ));
+const nMap = (o) => { const m = new Map(); Object.keys(o).forEach((l) => o[l].forEach((x) => m.set(normQ(x), l))); return m; };   // phrase → its language
+const BOOK_N = nSet([...BOOK_CHIPS, 'i want to talk to sales', 'talk to sales please', 'i want a demo', 'book a call', 'i want to book a demo', 'quiero hablar con ventas', 'hablar con un comercial', 'quiero una demo', 'quiero reservar una demo', 'reservar demo', 'quero falar com vendas', 'quero uma demo', 'agendar demo']);
+/* Pricing chips answered by the page (17-nov-2026: through the agent they took 16-25 s).
+   Compare two plans = fixed comparison; Which plan fits me? and Estimate my monthly bill = 2-3 chip questions, then the plan card
+   and the bill computed exactly like estimateLine(), in the currency and billing the visitor has selected on the page.
+   Anything typed that is not one of the offered chips leaves the questions and goes to the agent as usual. */
+const PQ = {
+  en: { chanQ: 'Where will your agent talk to customers?', chan: ['Website', 'WhatsApp', 'Both'], crmQ: 'Do you need it connected to your CRM?', crm: ['Yes', 'No'],
+        volQ: 'Roughly how many chats a month?', vol: ['Under 500', '500 – 2,500', '2,500 – 20,000', 'More than 20,000'], vol2Q: 'How many chats a month?', vol2: ['500', '1,000', '2,500', '5,000', '10,000', 'More than 20,000'],
+        fits: (n) => `**${n}** is the one that fits.`, ann: 'billed annually', mon: 'billed monthly',
+        bill: (n, b, bl, inc, ai) => `**${n}**: ${b}/mo, ${bl}. It includes ${inc} chats and ${ai} AI chats a month.`, extra: (x, k, u, c) => `${x} extra chats: ${k} × 500-chat pack at ${u} = ${c}.`,
+        total: (t) => `**Estimated total: ${t}/mo**, before tax.`, aiNote: (a, s) => `Each AI chat beyond the ${a} included costs ${s}0.10.`, biz: 'Above 20,000 chats a month, **Business** has a custom price agreed with the team.',
+        cmp: (s, bl, st, pr, wa) => `Here is how they compare (${bl}, before tax).\n1. **Starter** ${s}${st}/mo: 500 chats, 100 AI chats, 2 seats, website only, basic integrations.\n2. **Professional** ${s}${pr}/mo: 2,500 chats, 300 AI chats, 3 seats, no branding, HubSpot, Salesforce, Pipedrive, webhooks and API.\n3. **Professional + WhatsApp** ${s}${wa}/mo: Professional plus 1 WhatsApp number and 500 AI chats.\n**Business** has custom volume, 5+ seats, dedicated support and an SLA. Every paid plan has a 14-day free trial.`,
+        whoQ: 'Who will build and run the agent?', who: ['My team', 'We’d rather you do it for us'],
+        studio: '**Agent Studio** fits better: our team designs, launches and runs the agent for you, on your website or WhatsApp.\nThe team prepares a proposal for your case.',
+        f: { studio: ['Talk to Sales', 'Compare two plans'], plan: ['Estimate my monthly bill', 'Compare two plans', 'Talk to Sales'], bill: ['Which plan fits me?', 'Compare two plans', 'Talk to Sales'], cmp: ['Which plan fits me?', 'Estimate my monthly bill', 'Talk to Sales'] } },
+  es: { chanQ: '¿Dónde hablará tu agente con los clientes?', chan: ['Web', 'WhatsApp', 'Los dos'], crmQ: '¿Necesitas conectarlo a tu CRM?', crm: ['Sí', 'No'],
+        volQ: '¿Cuántos chats al mes, más o menos?', vol: ['Menos de 500', '500 – 2.500', '2.500 – 20.000', 'Más de 20.000'], vol2Q: '¿Cuántos chats al mes?', vol2: ['500', '1.000', '2.500', '5.000', '10.000', 'Más de 20.000'],
+        fits: (n) => `El que te encaja es **${n}**.`, ann: 'pago anual', mon: 'pago mensual',
+        bill: (n, b, bl, inc, ai) => `**${n}**: ${b}/mes, ${bl}. Incluye ${inc} chats y ${ai} chats con IA al mes.`, extra: (x, k, u, c) => `${x} chats extra: ${k} × pack de 500 chats a ${u} = ${c}.`,
+        total: (t) => `**Total estimado: ${t}/mes**, antes de impuestos.`, aiNote: (a, s) => `Cada chat con IA por encima de los ${a} incluidos cuesta ${s}0,10.`, biz: 'Por encima de 20.000 chats al mes, **Business** tiene un precio a medida que se acuerda con el equipo.',
+        cmp: (s, bl, st, pr, wa) => `Así se comparan (${bl}, antes de impuestos).\n1. **Starter** ${s}${st}/mes: 500 chats, 100 chats con IA, 2 usuarios, solo web, integraciones básicas.\n2. **Professional** ${s}${pr}/mes: 2.500 chats, 300 chats con IA, 3 usuarios, sin marca de Landbot, HubSpot, Salesforce, Pipedrive, webhooks y API.\n3. **Professional + WhatsApp** ${s}${wa}/mes: Professional más 1 número de WhatsApp y 500 chats con IA.\n**Business** tiene volumen a medida, 5 o más usuarios, soporte dedicado y SLA. Todos los planes de pago tienen 14 días de prueba gratis.`,
+        whoQ: '¿Quién montará y llevará el agente?', who: ['Mi equipo', 'Preferimos que lo hagáis vosotros'],
+        studio: '**Agent Studio** te encaja mejor: nuestro equipo diseña, lanza y lleva el agente por ti, en tu web o en WhatsApp.\nEl equipo prepara una propuesta para tu caso.',
+        f: { studio: ['Hablar con ventas', 'Compara dos planes'], plan: ['Calcula mi factura mensual', 'Compara dos planes', 'Hablar con ventas'], bill: ['¿Qué plan me encaja?', 'Compara dos planes', 'Hablar con ventas'], cmp: ['¿Qué plan me encaja?', 'Calcula mi factura mensual', 'Hablar con ventas'] } },
+  pt: { chanQ: 'Onde o seu agente vai falar com os clientes?', chan: ['Site', 'WhatsApp', 'Os dois'], crmQ: 'Você precisa conectar ao seu CRM?', crm: ['Sim', 'Não'],
+        volQ: 'Quantos chats por mês, mais ou menos?', vol: ['Menos de 500', '500 – 2.500', '2.500 – 20.000', 'Mais de 20.000'], vol2Q: 'Quantos chats por mês?', vol2: ['500', '1.000', '2.500', '5.000', '10.000', 'Mais de 20.000'],
+        fits: (n) => `O que encaixa para você é o **${n}**.`, ann: 'pagamento anual', mon: 'pagamento mensal',
+        bill: (n, b, bl, inc, ai) => `**${n}**: ${b}/mês, ${bl}. Inclui ${inc} chats e ${ai} chats com IA por mês.`, extra: (x, k, u, c) => `${x} chats extras: ${k} × pacote de 500 chats a ${u} = ${c}.`,
+        total: (t) => `**Total estimado: ${t}/mês**, antes de impostos.`, aiNote: (a, s) => `Cada chat com IA acima dos ${a} incluídos custa ${s}0,10.`, biz: 'Acima de 20.000 chats por mês, o **Business** tem um preço sob medida combinado com o time.',
+        cmp: (s, bl, st, pr, wa) => `Assim eles se comparam (${bl}, antes de impostos).\n1. **Starter** ${s}${st}/mês: 500 chats, 100 chats com IA, 2 usuários, só site, integrações básicas.\n2. **Professional** ${s}${pr}/mês: 2.500 chats, 300 chats com IA, 3 usuários, sem a marca de Landbot, HubSpot, Salesforce, Pipedrive, webhooks e API.\n3. **Professional + WhatsApp** ${s}${wa}/mês: Professional mais 1 número de WhatsApp e 500 chats com IA.\n**Business** tem volume sob medida, 5 ou mais usuários, suporte dedicado e SLA. Todos os planos pagos têm 14 dias de teste grátis.`,
+        whoQ: 'Quem vai montar e cuidar do agente?', who: ['O meu time', 'Preferimos que vocês façam'],
+        studio: '**Agent Studio** encaixa melhor: o nosso time desenha, lança e cuida do agente para você, no seu site ou no WhatsApp.\nO time prepara uma proposta para o seu caso.',
+        f: { studio: ['Falar com vendas', 'Compare dois planos'], plan: ['Calcule a minha fatura mensal', 'Compare dois planos', 'Falar com vendas'], bill: ['Qual plano encaixa para mim?', 'Compare dois planos', 'Falar com vendas'], cmp: ['Qual plano encaixa para mim?', 'Calcule a minha fatura mensal', 'Falar com vendas'] } }
+};
+const PFIX = nMap({ en: ['which plan fits me?', 'which plan should i choose', 'what plan do i need'], es: ['¿qué plan me encaja?', 'que plan me conviene', 'que plan necesito'], pt: ['qual plano encaixa para mim?', 'qual plano devo escolher', 'qual plano eu preciso'] });
+const PBILL = nMap({ en: ['estimate my monthly bill', 'estimate my monthly bill, extras included.', 'how much will i pay', 'how much would it cost me'], es: ['calcula mi factura mensual', 'calcula mi factura mensual, con extras.', 'cuanto pagaria al mes', 'cuanto me costaria'], pt: ['calcule a minha fatura mensal', 'calcule a minha fatura mensal, com extras.', 'quanto eu pagaria por mes', 'quanto me custaria'] });
+const PCMP = nMap({ en: ['compare two plans', 'compare plans', 'help me choose between two plans for my case.'], es: ['compara dos planes', 'comparar planes', 'ayúdame a elegir entre dos planes para mi caso.'], pt: ['compare dois planos', 'comparar planos', 'me ajuda a escolher entre dois planos para o meu caso.'] });
+async function pSay(text) {   /* page bubbles: a numbered list stays in one bubble; only a new visitor message stops it */
+  const seq = st.userSeq, reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, bubbles = [];
+  text.split('\n').forEach((l) => { const item = /^\d+[.)]\s/.test(l), prev = bubbles[bubbles.length - 1]; if (item && prev && prev.list) prev.lines.push(l); else bubbles.push({ list: item, lines: [l] }); });
+  for (let i = 0; i < bubbles.length; i++) {
+    if (i > 0 && !reduce) { const dots = push(h(thinkHTML(''))); await sleep(450); dots.remove(); }
+    if (seq !== st.userSeq) return false;
+    const el = push(h(`<div class="awe-msg">${md(bubbles[i].lines.join('\n'))}</div>`)); if (i === 0) { st.anchor = el; ding(); }
+  }
+  return seq === st.userSeq;
+}
+const pChips = (xs) => { if (tierNow() === 'C') xs = xs.filter((x) => !BOOK_N.has(normQ(x)));   // geo C: never offer the demo or sales (they can still ask for it)
+  repliesEl.innerHTML = xs.map((x) => `<button type="button" class="awe-chip" data-awe-say="${esc(x)}">${esc(x)}</button>`).join(''); };
+const pMoney = (P, n) => P.s + (Number.isInteger(n) ? fmt(n) : n.toFixed(2));
+async function pAsk(step) {
+  const C = PQ[LANG] || PQ.en; st.pq.step = step;
+  if (await pSay(C[step + 'Q'])) pChips(C[step]);
+}
+async function pStart(flow) {
+  st.pq = { flow }; const f = st.facts;
+  if (flow === 'cmp') { st.pq = null; return pCompare(); }
+  if (flow === 'bill' && f.chan) return pAsk('vol2');
+  return pAsk('chan');
+}
+async function pStep(q) {   /* true when q is one of the offered chips (handled here) */
+  const C = PQ[LANG] || PQ.en, s = st.pq.step, opts = C[s] || [], i = opts.map(normQ).indexOf(normQ(q));
+  if (i < 0) { st.pq = null; return false; }
+  const f = st.facts;
+  if (s === 'chan') { f.chan = { k: ['web', 'wa', 'both'][i] }; return pAsk(st.pq.flow === 'bill' ? 'vol2' : f.chan.k === 'web' ? 'crm' : 'vol').then(() => true); }
+  if (s === 'crm') { if (i === 0) f.crm = { v: 'yes' }; else delete f.crm; return pAsk('vol').then(() => true); }
+  if (s === 'vol') { f.vol = { v: [400, 2000, 5000, 25000][i] };   // Agent Studio fit (CRM, WhatsApp or real volume): ask who builds it
+    if (f.vol.v <= 20000 && (f.crm || f.vol.v >= 2000 || (f.chan && f.chan.k !== 'web'))) { await pAsk('who'); return true; }
+    st.pq = null; await pPlan(); return true; }
+  if (s === 'who') { st.pq = null; if (i === 1) await pStudio(); else await pPlan(); return true; }
+  if (s === 'vol2') { f.vol = { v: [500, 1000, 2500, 5000, 10000, 25000][i] }; st.pq = null; await pBill(); return true; }
+  return false;
+}
+async function pPlan() {
+  const C = PQ[LANG] || PQ.en, f = st.facts, vol = f.vol ? f.vol.v : 0, wa = f.chan && f.chan.k !== 'web';
+  const key = vol > 20000 ? 'biz' : wa ? 'prowa' : (f.crm || vol > 500) ? 'pro' : 'starter', name = PLAN_COPY[LANG][key][0];
+  if (!(await pSay(C.fits(name) + '\n' + PLAN_COPY[LANG].why[key]))) return;
+  planCard(key); st.plan = key; pChips(C.f.plan);
+  st.fixedNote = `(The page already recommended ${name} with its price card, from their answers: channel ${f.chan ? f.chan.k : '?'}, CRM ${f.crm ? 'yes' : 'no'}, about ${fmt(vol)} chats a month. Do not repeat it.)`;
+}
+async function pStudio() {   /* the skill's Agent Studio fit: offered when they would rather not build it themselves */
+  const C = PQ[LANG] || PQ.en;
+  if (await pSay(C.studio)) pChips(C.f.studio);
+  st.fixedNote = '(The page already recommended Agent Studio: they would rather we build and run the agent. Do not repeat it.)';
+}
+async function pBill() {
+  const C = PQ[LANG] || PQ.en, f = st.facts, vol = f.vol ? f.vol.v : 0, wa = f.chan && f.chan.k !== 'web';
+  if (vol > 20000) { if (await pSay(C.biz)) { planCard('biz'); pChips(C.f.bill); } st.fixedNote = '(The page already told them that above 20,000 chats a month Business has a custom price. Do not repeat it.)'; return; }
+  const plan = wa ? 'prowa' : vol > 500 || f.crm ? 'pro' : 'starter', P = PRICES[pageCur()] || PRICES.EUR, ann = pageBilling() === 'annual', i = ann ? 0 : 1;
+  const base = plan === 'starter' ? P.starter[i] : plan === 'pro' ? P.pro[i] : P.pro[i] + P.wa[i];   // same formula as estimateLine()
+  const inc = plan === 'starter' ? 500 : 2500, aiInc = plan === 'starter' ? 100 : plan === 'pro' ? 300 : 500, name = PLAN_COPY[LANG][plan][0];
+  const extra = Math.max(0, vol - inc), packs = Math.ceil(extra / 500), total = base + packs * 25;
+  const L = [C.bill(name, pMoney(P, base), ann ? C.ann : C.mon, fmt(inc), fmt(aiInc))];
+  if (packs) L.push(C.extra(fmt(extra), packs, pMoney(P, 25), pMoney(P, packs * 25)));
+  L.push(C.total(pMoney(P, total)), C.aiNote(fmt(aiInc), P.s));
+  if (!(await pSay(L.join('\n')))) return;
+  planCard(plan); st.plan = plan; pChips(C.f.bill);
+  st.fixedNote = `(The page already showed their estimate: ${name}, about ${fmt(vol)} chats a month, total ${pMoney(P, total)}/mo before tax, ${ann ? 'annual' : 'monthly'} billing. Do not repeat it.)`;
+}
+async function pCompare() {
+  const C = PQ[LANG] || PQ.en, P = PRICES[pageCur()] || PRICES.EUR, ann = pageBilling() === 'annual', i = ann ? 0 : 1;
+  if (await pSay(C.cmp(P.s, ann ? C.ann : C.mon, P.starter[i], P.pro[i], P.pro[i] + P.wa[i]))) pChips(C.f.cmp);
+  st.fixedNote = '(The page already showed them the comparison of Starter, Professional and Professional + WhatsApp with prices. Do not repeat it.)';
+}
+const SALES_ASK = { en: 'Talk to Sales', es: 'Hablar con ventas', pt: 'Falar com vendas' };
+function fastStart() { st.fastBook = true; st.salesMissed = false; st.salesReady = new Promise((r) => (st._salesReady = r)); clearTimeout(st.fastT); st.fastT = setTimeout(() => fastEnd(true), 40000); }
+function fastEnd(missed) { if (!st.fastBook) return; st.fastBook = false; clearTimeout(st.fastT); st.salesMissed = !!missed; const ok = st._salesReady; st._salesReady = null; st.salesReady = null; if (ok) ok(); }
+async function reroute() {
+  fastStart();
+  st.core.sendMessage(withData({ type: 'text', message: SALES_ASK[LANG] || SALES_ASK.en }));
+  await Promise.race([st.salesReady, new Promise((r) => setTimeout(r, 30000))]);
+  st.salesMissed = false;
+}
 const MAX_MSG = 500;   // longer messages made the agent fail ('something went wrong'): 750 worked, 900 failed on 30-oct; Sales asked for a cap
 async function say(text, payload) {
   let q = (text || '').trim(); if (!q) return;
@@ -478,12 +626,20 @@ async function say(text, payload) {
   push(h(`<div class="awe-me">${esc(q)}</div>`));
   if (cut) push(h(`<div class="awe-sub" style="text-align:right;margin:-4px 2px 6px">${esc(T.tooLong(MAX_MSG.toLocaleString(LANG === 'en' ? 'en' : 'es')))}</div>`));
   if (!payload) followLang(q); const aiHit = !payload && readAI(q); readUser(aiHit ? q.replace(aiHit, ' ') : q); setWorking(guessSection(q));
+  const fast = !payload && BOOK_N.has(normQ(q));
+  if (fast) { st.pq = null; fastStart(); setWorking(null); bookCard(); }
+  if (!fast && !payload) {   // pricing chips answered by the page
+    try { if (st.pq && await pStep(q)) { setWorking(null); return; } } catch (e) { st.pq = null; console.warn('[awe] pricing chips', e); }   // on any error the agent answers
+    const nq = normQ(q), fl = PFIX.has(nq) ? ['plan', PFIX.get(nq)] : PBILL.has(nq) ? ['bill', PBILL.get(nq)] : PCMP.has(nq) ? ['cmp', PCMP.get(nq)] : null;
+    if (fl) { if (fl[1] !== LANG && DICT[fl[1]]) { LANG = fl[1]; T = DICT[LANG]; paint(); } setWorking(null); try { await pStart(fl[0]); return; } catch (e) { st.pq = null; console.warn('[awe] pricing chips', e); } }
+  }
   let out = q;
   if (!st.ctxSent && !payload) { st.ctxSent = true; out = contextLine() + '\n\n' + q; }
+  if (st.fixedNote && !payload) { out = out.slice(0, out.length - q.length) + st.fixedNote + '\n' + q; st.fixedNote = ''; }   // after the context line, right before their words
   const est = payload ? '' : estimateLine();
   if (est && est !== st.lastEst) { st.lastEst = est; out += '\n\n' + est; }   // only when the figures change
   else if (!payload && out === q) out += '\n\n[chat language ' + LANG + ']';   // keeps the reply in the visitor's language
-  armWatchdog(q);
+  if (!fast) armWatchdog(q);
   try { await deliver(payload ? q : out, payload); }
   catch (e) { setWorking(null); push(h(`<div class="awe-msg"><p>Something went wrong reaching the agent. Try again in a moment.</p></div>`)); console.warn('[awe]', e); }
 }
@@ -526,9 +682,16 @@ async function handleMsg(m, ex, bid) {
   setWorking(null);
   const text = m.message || m.title || '';
   if (m.type === 'dialog' && (m.buttons || []).length && !ex.is_ai_agent_message) st.flowBtns = m.buttons.map((t, i) => ({ text: t, payload: (m.payloads || [])[i] }));
+  if (st.fastBook) {   // the booking card is already on screen
+    if (bid === 'sales_book') { fastEnd(false); if (!thread.querySelector('.awe-book')) bookCard(); return; }
+    /* anything else (a late answer to an earlier question, the agent's error when two messages cross) is not shown: the visitor already has the card.
+       The routing gets 8 s more; if it never comes, reroute() runs before any booking button. */
+    clearTimeout(st.fastT); st.fastT = setTimeout(() => fastEnd(true), 8000);
+    return;
+  }
   if (bid === 'team_email') { emailCard(); return; }
   if (bid === 'team_done') { receipts(); return; }
-  if (bid === 'sales_book') { bookCard(); return; }
+  if (bid === 'sales_book') { if (st.salesMissed) { st.salesMissed = false; const c = [...thread.querySelectorAll('.awe-book')].pop(); if (c && !c.querySelector('.awe-receipt')) return; } bookCard(); return; }
   if (bid === 'sales_booked') { await agentText(T.bookedMsg); return; }
   if (bid === 'support_route') { supportCard(); return; }
   if (bid === 'team_more') { repliesEl.innerHTML = `<button type="button" class="awe-chip" data-awe-say="${esc(T.oneMore)}" data-awe-payload="$0">${esc(T.oneMore)}</button>`; return; }
@@ -557,7 +720,7 @@ function splitSources(text) {
   for (const line of text.split(/\n/)) { const mm = line.replace(/[*_]/g, '').match(/^\s*(sources?|fuentes?|fontes?)\s*:\s*(.+)$/i); if (mm) src.push(mm[2]); else keep.push(line); }
   return { body: keep.join('\n').trim(), src: src.join(' · ') };
 }
-function sourceChips(s) {
+function sourceChips(s) {   // no longer drawn under replies (Fabo, 17-nov-2026: the "LANDBOT.IO Home" chip added nothing); kept for reference
   if (!s) return '';
   const chips = []; const seen = new Set();
   for (const part of s.split(/\s*[·,]\s*/)) for (const [re, id] of SRC_MAP) if (re.test(part) && !seen.has(id)) {
@@ -630,8 +793,8 @@ async function templateCards(ids, more = true, after = null) {
 }
 /* after the prompt card: three templates that fit the case, as phone mockups; a tap opens the live template full screen in a new tab (10-nov-2026) */
 const TPL_PICKS = [
-  [/whatsapp/i, ['t01', 't42', 't26']],
-  [/shop|store|e-?commerce|cart|order|tienda|carrito|pedido|loja|carrinho/i, ['t25', 't26', 't17']],
+  [/whatsapp/i, ['t11', 't42', 't10']],
+  [/shop|store|e-?commerce|cart|order|tienda|carrito|pedido|loja|carrinho/i, ['t25', 't10', 't17']],
   [/support|soporte|suporte|ticket|help ?desk|faq|atenci/i, ['t21', 't14', 't20']],
   [/appointment|reservation|reserva|\bcitas?\b|clinic|cl[ií]nica|dentist|restaurant|hotel|sal[oó]n/i, ['t19', 't29', 't13']],
   [/real estate|propert|inmobili|imobili|piso|apartment/i, ['t15', 't53', 't13']],
@@ -718,7 +881,7 @@ async function agentText(text) {
     const bm = parts[i].match(/^§§(\d+)$/);
     if (bm) { const b = blocks[+bm[1]]; if (b.kind === 'prompt') continue;   // no copy-paste prompt card any more: templates instead (Fabo, 10-nov-2026)
       const el = push(flowCard(b.code.split(/\n/).map((l) => l.trim()).filter(Boolean))); if (i === 0) { st.anchor = el; ding(); } continue; }
-    const el = push(h(`<div class="awe-msg">${md(parts[i])}${i === parts.length - 1 ? sourceChips(src) : ''}</div>`));
+    const el = push(h(`<div class="awe-msg">${md(parts[i])}</div>`));
     if (i === 0) { st.anchor = el; ding(); }
     await blogCard(el);
   }
@@ -1146,7 +1309,7 @@ async function newConversation() {
   await restartSession();
   if (LANG !== PAGE_LANG) { LANG = PAGE_LANG; T = DICT[LANG]; paint(); }
   closeCal(false);
-  Object.assign(st, { restarted: false, userMsgs: [], answers: 0, nbaKey: '', items: new Set(), plan: null, planEl: null, teamDone: false, hot: 0, mailMode: 'team', fromBook: false, demoLang: null, cited: new Set(), awaiting: null, facts: {} });
+  Object.assign(st, { pq: null, fixedNote: '', fastBook: false, salesMissed: false, salesReady: null, restarted: false, userMsgs: [], answers: 0, nbaKey: '', items: new Set(), plan: null, planEl: null, teamDone: false, hot: 0, mailMode: 'team', fromBook: false, demoLang: null, cited: new Set(), awaiting: null, facts: {} });
   initFacts(); thread.innerHTML = ''; repliesEl.innerHTML = ''; setWorking(null); renderFacts(); openPanel(); keepFocus(true);
 }
 function setTheme(t, remember) {

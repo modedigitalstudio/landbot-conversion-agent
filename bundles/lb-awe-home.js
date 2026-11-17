@@ -1,4 +1,4 @@
-/* Landbot Conversion Agent Master · home (/, /es, /pt-br) · built 2026-11-10 */
+/* Landbot Conversion Agent Master · home (/, /es, /pt-br) · built 2026-11-17 */
 /* lb-journey · first-party record of how a visitor moves through the site, for the Conversion Agent's handoff.
    Runs on every page of the site. Records ONLY after analytics consent (CookieFirst "performance").
    Stores in this browser only (localStorage "lb-journey-v1"): referrer host, UTMs, landing page, pages with time and scroll,
@@ -256,19 +256,19 @@ Object.assign(DICT.en, { slow: 'This is taking longer than usual. Want me to try
   r3Send: 'On its way to your inbox', r3sSend: 'within one business day · Landbot team', sketchH: 'Your agent · sketch', promptH: 'Prompt for your AI',
   promptSub: 'Paste it in Claude, ChatGPT, Codex or Cursor once Landbot is connected: landbot.io/build-with-ai.', copy: 'Copy', copied: 'Copied ✓',
   whyMail: 'Keep what we worked out here in your inbox, to share it or build it later. No call needed.', themeL: 'Light mode', themeD: 'Dark mode', sent: 'Explored in the chat',
-  starters: ['Book a demo', 'Talk to Sales', 'Use Landbot with my AI', 'Which plan fits me?'] });
+  starters: ['Book a demo', 'Talk to Sales', 'Build with AI', 'How can Landbot help me?'] });
 Object.assign(DICT.es, { slow: 'Esto está tardando más de lo normal. ¿Lo intento de nuevo?', retry: 'Reintentar', resetL: 'Nueva conversación', mailSkip: 'No, gracias, sigo con el chat', mailSkipped: 'Omitido. Seguimos.', teamBtn: 'Que me escriba el equipo', msgTeamMail: 'Prefiero que alguien del equipo me escriba por email.', more: 'Continuar ↓', mailBtn: 'Envíamelo por email', msgMail: 'Envíamelo por email, por favor.', mailSendH: '¿A qué email te lo envío?',
   mailSendSub: 'El equipo de Landbot te lo envía en un día laborable, con esta conversación. Sin llamadas.',
   r3Send: 'De camino a tu email', r3sSend: 'en un día laborable · equipo de Landbot', sketchH: 'Tu agente · esbozo', promptH: 'Prompt para tu IA',
   promptSub: 'Pégalo en Claude, ChatGPT, Codex o Cursor con Landbot ya conectado: landbot.io/build-with-ai.', copy: 'Copiar', copied: 'Copiado ✓',
   whyMail: 'Guárdate lo que hemos visto aquí en tu email, para compartirlo o montarlo después. Sin llamadas.', themeL: 'Modo claro', themeD: 'Modo oscuro', sent: 'Visto en el chat',
-  starters: ['Reservar una demo', 'Hablar con ventas', 'Usar Landbot con mi IA', '¿Qué plan me encaja?'] });
+  starters: ['Reservar una demo', 'Hablar con ventas', 'Crear con IA', '¿Cómo puede ayudarme Landbot?'] });
 Object.assign(DICT.pt, { slow: 'Isto está demorando mais que o normal. Quer que eu tente de novo?', retry: 'Tentar de novo', resetL: 'Nova conversa', mailSkip: 'Não, obrigado, sigo no chat', mailSkipped: 'Ignorado. Seguimos.', teamBtn: 'Quero que o time me escreva', msgTeamMail: 'Prefiro que alguém do time me escreva por e-mail.', more: 'Continuar ↓', mailBtn: 'Enviar para o meu e-mail', msgMail: 'Me envia por e-mail, por favor.', mailSendH: 'Para qual e-mail eu envio?',
   mailSendSub: 'O time de Landbot envia em um dia útil, com esta conversa. Sem ligação.',
   r3Send: 'A caminho do seu e-mail', r3sSend: 'em um dia útil · time de Landbot', sketchH: 'O seu agente · esboço', promptH: 'Prompt para a sua IA',
   promptSub: 'Cole no Claude, ChatGPT, Codex ou Cursor com Landbot já conectado: landbot.io/build-with-ai.', copy: 'Copiar', copied: 'Copiado ✓',
   whyMail: 'Guarde o que vimos aqui no seu e-mail, para compartilhar ou montar depois. Sem ligação.', themeL: 'Modo claro', themeD: 'Modo escuro', sent: 'Visto no chat',
-  starters: ['Agendar uma demo', 'Falar com vendas', 'Usar Landbot com a minha IA', 'Qual plano encaixa para mim?'] });
+  starters: ['Agendar uma demo', 'Falar com vendas', 'Criar com IA', 'Como Landbot pode me ajudar?'] });
 /* AI agent template cards (10-nov-2026) */
 Object.assign(DICT.en, { tplH: 'Template', tplTry: 'Try it full screen', tplFull: 'Full screen', tplClose: 'Close preview', tplGain: 'What you get', tplLoading: 'Loading the live agent…', tplMore: 'See all templates', below: 'More below', stripH: 'Or start from a template', stripSub: 'Live agents you can try now and make yours.', blogH: 'From the blog', blogGo: 'Read the post' });
 Object.assign(DICT.es, { tplH: 'Plantilla', tplTry: 'Probar a pantalla completa', tplFull: 'Pantalla completa', tplClose: 'Cerrar vista previa', tplGain: 'Qué consigues', tplLoading: 'Cargando el agente en vivo…', tplMore: 'Ver todas las plantillas', below: 'Sigue abajo', stripH: 'O empieza desde una plantilla', stripSub: 'Agentes en vivo que puedes probar ahora y hacer tuyos.', blogH: 'Del blog', blogGo: 'Leer el artículo' });
@@ -358,10 +358,32 @@ async function restartSession() {
   Object.assign(st, { boot: null, core: null, greeted: false, ctxSent: false, flowBtns: null, greetBtns: null, chain: Promise.resolve() });
 }
 /* the booking's Calendly references ride on the next message as custom_data, so the bot can look the invitee up (Xavi, 8-oct-2026) */
-function withData(m) { const d = st.nextData; st.nextData = null; if (d) m.custom_data = d; return m; }
+function withData(m) { const d = st.nextData; st.nextData = null; m.custom_data = Object.assign({ conversation_summary: pageSummary(), visitor_journey: pageJourney() }, d || {}); return m; }
+/* The summary for sales is built here, not by the agent: the agent rewriting it on every turn added ~4-6 s to each reply (test 17-nov-2026).
+   It rides on every message as custom_data, so whatever turn the agent exits on, the bot already holds @conversation_summary and @visitor_journey
+   for the sales email, Slack and the note. */
+function pageSummary() {
+  const f = st.facts || {}, P = [];
+  const msgs = (st.userMsgs || []).map((m) => m.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (msgs.length) P.push('Visitor said: ' + msgs.slice(-6).map((m) => '"' + (m.length > 180 ? m.slice(0, 177) + '…' : m) + '"').join(' / '));
+  if (f.why) P.push('Why now: ' + f.why.v);
+  const facts = FACT_ORDER.filter((k) => f[k] && !['why', 'from'].includes(k)).map((k) => k + ': ' + factVal(k, f[k]));
+  if (st.plan) facts.push('plan shown: ' + PLAN_COPY.en[st.plan][0]);
+  if (facts.length) P.push(facts.join(' · '));
+  if (st.items && st.items.size) P.push('Sent in chat: ' + [...st.items].join(', '));
+  if (st.demoLang) P.push('Demo language: ' + st.demoLang);
+  P.push('Page: ' + location.pathname + ' (' + PAGE_LANG + '), chat in ' + LANG);
+  return P.join('. ').slice(0, 1200);
+}
+function pageJourney() {
+  const d = J(); if (!d) return '';
+  return [(d.from === 'direct' ? 'direct' : d.from) + (d.campaign ? ' · ' + d.campaign : ''), d.before && d.before.length ? d.before.join(' → ') : '', 'visit #' + (d.visit || 1)].filter(Boolean).join(' | ');
+}
 const calRefs = (d) => { const p = (d && d.payload) || {}; return { calendly_invitee: (p.invitee && p.invitee.uri) || '', calendly_event: (p.event && p.event.uri) || '' }; };
 async function deliver(text, payload) {
   await boot();
+  if (payload && st.salesReady) await st.salesReady;   // a booking button waits until the bot is really at sales_book
+  if (payload && st.salesMissed) await reroute();
   const list = st.flowBtns || st.greetBtns;   // the buttons of the LAST fixed block, not the greeting's (both use $0, $1…)
   const btn = payload && list && list.find((b) => b.payload === payload);
   /* the payload moves the flow; the label is the visitor's own words, so the agent keeps their language */
@@ -369,7 +391,10 @@ async function deliver(text, payload) {
 }
 
 /* ---------- UI: lava orb bar, layer ---------- */
-const starterChips = () => T.starters.map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
+/* geo C: the opening chips never offer the demo or sales (sales rule: tier C → only if they ask). GEO is known from the start;
+   BOOK_N / tierNow() are defined further down, so the starters use their own list. */
+const STARTER_SALES = /^(book a demo|talk to sales|reservar una demo|hablar con ventas|agendar uma demo|falar com vendas)$/i;
+const starterChips = () => T.starters.filter((l) => !(GEO.tier === 'C' && STARTER_SALES.test(l.trim()))).map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
 let gooN = 0;
 const LAVA = (cls) => { const id = 'aweGoo' + (++gooN); return `<span class="awe-lava ${cls || ''}" aria-hidden="true">
   <svg viewBox="0 0 300 300"><defs><filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
@@ -460,6 +485,141 @@ async function skipMail(card) {   // leave the flow's email step: it accepts onl
   card.appendChild(h(`<div class="awe-sub" style="margin-top:8px">${esc(T.mailSkipped)}</div>`));
   st.restarted = true; await restartSession();
 }
+/* Booking chips go straight to the booking card (17-nov-2026: the visitor waited ~10-16 s for the agent to route "Talk to Sales").
+   The chip text still goes to the agent, so the bot moves to sales_book in the background; booking buttons wait for that.
+   If the agent answers instead of routing, its reply is shown and the bot is routed again before any booking button is sent. */
+const BOOK_CHIPS = new Set(['book a demo', 'talk to sales', 'reservar una demo', 'hablar con ventas', 'agendar uma demo', 'falar com vendas',
+  'i’d like to book a demo.', 'quiero reservar una demo.', 'quero agendar uma demo.']);   // starters + the "Book a demo" button of the next-step card (T.msgDemo)
+/* typed variants count too: lower case, no accents, no ¿?¡! or quotes ("como landbot puede ayudarme" = the chip). Whole-phrase match only, never a substring. */
+const normQ = (s) => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[¿?¡!.,;:"“”'’]/g, ' ').replace(/\s+/g, ' ').trim();
+const nSet = (xs) => new Set(xs.map(normQ));
+const BOOK_N = nSet([...BOOK_CHIPS, 'i want to talk to sales', 'talk to sales please', 'i want a demo', 'book a call', 'i want to book a demo', 'quiero hablar con ventas', 'hablar con un comercial', 'quiero una demo', 'quiero reservar una demo', 'reservar demo', 'quero falar com vendas', 'quero uma demo', 'agendar demo']);
+const SALES_ASK = { en: 'Talk to Sales', es: 'Hablar con ventas', pt: 'Falar com vendas' };
+function fastStart() { st.fastBook = true; st.salesMissed = false; st.salesReady = new Promise((r) => (st._salesReady = r)); clearTimeout(st.fastT); st.fastT = setTimeout(() => fastEnd(true), 40000); }
+function fastEnd(missed) { if (!st.fastBook) return; st.fastBook = false; clearTimeout(st.fastT); st.salesMissed = !!missed; const ok = st._salesReady; st._salesReady = null; st.salesReady = null; if (ok) ok(); }
+async function reroute() {
+  fastStart();
+  st.core.sendMessage(withData({ type: 'text', message: SALES_ASK[LANG] || SALES_ASK.en }));
+  await Promise.race([st.salesReady, new Promise((r) => setTimeout(r, 30000))]);
+  st.salesMissed = false;
+}
+/* "Build with AI" answers at once from the page (17-nov-2026: the agent took 22-29 s for an answer that is always the same).
+   Nothing goes to the agent (a background call made the next question wait up to 34 s): the visitor's next message carries a note
+   that they already saw the steps, so the agent does not repeat them. */
+const BWAI_CHIPS = new Set(['build with ai', 'crear con ia', 'criar com ia', 'use landbot with my ai', 'usar landbot con mi ia', 'usar landbot com a minha ia']);
+const BWAI = {
+  en: { a: 'Describe what you want to the AI you already use, and **Landbot** builds it: an agent for your website or WhatsApp, ready to edit.\n1. **Create a free account**: 14-day trial, no card.\n2. **Connect Landbot to your AI**: Claude, ChatGPT, Codex, Cursor or any MCP client. The setup for each one is at https://landbot.io/build-with-ai\n3. **Describe your agent** or start from a template: it appears in your Landbot account.\n' + SIGNUP,
+        f: ['Which AI can I use?', 'Is it free?', 'Book a demo'] },
+  es: { a: 'Describe lo que quieres a la IA que ya usas y **Landbot** lo construye: un agente para tu web o WhatsApp, listo para editar.\n1. **Crea una cuenta gratis**: 14 días de prueba, sin tarjeta.\n2. **Conecta Landbot a tu IA**: Claude, ChatGPT, Codex, Cursor o cualquier cliente MCP. Los pasos para cada una están en https://landbot.io/build-with-ai\n3. **Describe tu agente** o parte de una plantilla: aparece en tu cuenta de Landbot.\n' + SIGNUP,
+        f: ['¿Qué IA puedo usar?', '¿Es gratis?', 'Reservar una demo'] },
+  pt: { a: 'Descreva o que você quer para a IA que você já usa e **Landbot** constrói: um agente para o seu site ou WhatsApp, pronto para editar.\n1. **Crie uma conta grátis**: 14 dias de teste, sem cartão.\n2. **Conecte Landbot à sua IA**: Claude, ChatGPT, Codex, Cursor ou qualquer cliente MCP. O passo a passo de cada uma está em https://landbot.io/build-with-ai\n3. **Descreva o seu agente** ou comece de um template: ele aparece na sua conta de Landbot.\n' + SIGNUP,
+        f: ['Qual IA posso usar?', 'É grátis?', 'Agendar uma demo'] }
+};
+const HELP_CHIPS = new Set(['how can landbot help me?', '¿cómo puede ayudarme landbot?', 'como landbot pode me ajudar?', 'como o landbot pode me ajudar?']);
+const HELP = {   /* facts only from the agent's KNOWLEDGE (Home): no-code, web + WhatsApp, leads/support/bookings, integrations, ~15 min, 12,000+ teams */
+  en: { a: '**Landbot** builds AI agents and chatbots for your website and WhatsApp, without code.\n1. **Capture and qualify leads** and book meetings in the chat.\n2. **Answer customers 24/7** with your own knowledge, and hand over to your team with the context.\n3. **Connect your tools**: HubSpot, Salesforce, Pipedrive, Calendly, Zapier and more.\nYour first agent is live in about 15 minutes. More than 12,000 teams use it.',
+        f: ['More leads from my site', 'Sell on WhatsApp', 'Automate support', 'Book a demo'] },
+  es: { a: '**Landbot** crea agentes de IA y chatbots para tu web y WhatsApp, sin código.\n1. **Capta y cualifica leads** y reserva reuniones en el chat.\n2. **Atiende a clientes 24/7** con tu propio conocimiento, y pasa a tu equipo con el contexto.\n3. **Conecta tus herramientas**: HubSpot, Salesforce, Pipedrive, Calendly, Zapier y más.\nTu primer agente está en marcha en unos 15 minutos. Lo usan más de 12.000 equipos.',
+        f: ['Más leads desde mi web', 'Vender por WhatsApp', 'Automatizar el soporte', 'Reservar una demo'] },
+  pt: { a: '**Landbot** cria agentes de IA e chatbots para o seu site e WhatsApp, sem código.\n1. **Capte e qualifique leads** e agende reuniões no chat.\n2. **Atenda clientes 24/7** com o seu próprio conhecimento, e passe para o seu time com o contexto.\n3. **Conecte suas ferramentas**: HubSpot, Salesforce, Pipedrive, Calendly, Zapier e mais.\nSeu primeiro agente fica no ar em cerca de 15 minutos. Mais de 12.000 times usam.',
+        f: ['Mais leads pelo meu site', 'Vender pelo WhatsApp', 'Automatizar o suporte', 'Agendar uma demo'] }
+};
+/* each typed variant knows its language: the answer comes in it and the chat switches to it, even on a page in another language */
+const nMap = (o) => { const m = new Map(); Object.keys(o).forEach((l) => o[l].forEach((x) => m.set(normQ(x), l))); return m; };
+const BWAI_N = nMap({ en: ['build with ai', 'use landbot with my ai', 'build it with ai', 'build with my ai', 'create with ai'],
+  es: ['crear con ia', 'usar landbot con mi ia', 'construir con ia', 'crear con inteligencia artificial', 'crealo con tu ia', 'crearlo con ia'],
+  pt: ['criar com ia', 'usar landbot com a minha ia', 'construir com ia', 'criar com inteligencia artificial', 'crie com a sua ia'] });
+const HELP_N = nMap({ en: ['how can landbot help me?', 'how can landbot help', 'how does landbot help', 'what does landbot do', 'what is landbot', 'what can landbot do'],
+  es: ['¿cómo puede ayudarme landbot?', 'como landbot puede ayudarme', 'como me puede ayudar landbot', 'como me ayuda landbot', 'en que me puede ayudar landbot', 'en que puede ayudarme landbot', 'que hace landbot', 'que es landbot', 'que puede hacer landbot'],
+  pt: ['como landbot pode me ajudar?', 'como o landbot pode me ajudar', 'como landbot pode ajudar', 'o que landbot faz', 'o que o landbot faz', 'o que e landbot', 'o que e o landbot', 'o que landbot pode fazer'] });
+const LEADS_N = nMap({ en: ['more leads from my site', 'more leads from my website', 'get more leads'], es: ['más leads desde mi web', 'mas leads desde mi sitio', 'conseguir mas leads', 'mas leads en mi web'], pt: ['mais leads pelo meu site', 'mais leads no meu site', 'conseguir mais leads'] });
+const WAPP_N = nMap({ en: ['sell on whatsapp', 'sell through whatsapp', 'whatsapp sales'], es: ['vender por whatsapp', 'vender en whatsapp', 'ventas por whatsapp'], pt: ['vender pelo whatsapp', 'vender no whatsapp', 'vendas pelo whatsapp'] });
+const SUPP_N = nMap({ en: ['automate support', 'automate customer support', 'automate customer service'], es: ['automatizar el soporte', 'automatizar soporte', 'automatizar la atencion al cliente'], pt: ['automatizar o suporte', 'automatizar suporte', 'automatizar o atendimento'] });
+const AIS_N = nMap({ en: ['which ai can i use', 'what ai can i use', 'which ai tools can i use'], es: ['que ia puedo usar', 'que ias puedo usar', 'con que ia funciona'], pt: ['qual ia posso usar', 'quais ias posso usar', 'com qual ia funciona'] });
+const FREE_N = nMap({ en: ['is it free', 'is landbot free', 'is there a free plan', 'is there a free trial'], es: ['es gratis', 'landbot es gratis', 'hay plan gratis', 'hay un plan gratis', 'hay plan gratuito', 'hay prueba gratis'], pt: ['e gratis', 'landbot e gratis', 'tem plano gratis', 'tem plano gratuito', 'tem teste gratis'] });
+const CRM_N = nMap({ en: ['does it work with my crm', 'does it integrate with my crm', 'can i connect my crm'], es: ['funciona con mi crm', 'se integra con mi crm', 'puedo conectar mi crm'], pt: ['funciona com o meu crm', 'integra com o meu crm', 'posso conectar meu crm'] });
+const WAPRICE_N = nMap({ en: ['how much is the whatsapp plan', 'how much does the whatsapp plan cost', 'whatsapp plan price', 'how much does whatsapp cost'], es: ['cuanto cuesta el plan de whatsapp', 'precio del plan de whatsapp', 'cuanto cuesta whatsapp'], pt: ['quanto custa o plano de whatsapp', 'preco do plano de whatsapp', 'quanto custa o whatsapp'] });
+const SAFE_N = nMap({ en: ['is my data safe', 'is it secure', 'is it gdpr compliant'], es: ['mis datos estan seguros', 'estan seguros mis datos', 'es seguro', 'cumple el rgpd', 'cumple gdpr'], pt: ['meus dados estao seguros', 'os meus dados estao seguros', 'e seguro', 'cumpre o gdpr'] });
+const HELP_NOTE = '(They already saw the overview of what Landbot does: do not repeat it.)';
+/* the three follow-ups of "How can Landbot help me?" also answer from the page (17-nov-2026: through the agent they took 16-25 s).
+   Facts only from the agent's KNOWLEDGE (customer stories, integrations, plans). No prices here: the site shows EUR or USD by country. */
+const LEADS = {
+  en: { a: 'Landbot turns visits into qualified leads, right in the chat on your website.\n1. **Qualify** with a few natural questions instead of a long form.\n2. **Book the meeting** in the chat, or send the lead to your CRM: HubSpot, Salesforce, Pipedrive.\n3. **Hand over** to your sales team with the whole conversation.\nLead Laundry got **+35% conversion** and Emma **−30% cost per lead**.\n' + SIGNUP,
+        f: ['Book a demo', 'Build with AI', 'Does it work with my CRM?'] },
+  es: { a: 'Landbot convierte visitas en leads cualificados, en el propio chat de tu web.\n1. **Cualifica** con unas pocas preguntas naturales en lugar de un formulario largo.\n2. **Reserva la reunión** en el chat, o envía el lead a tu CRM: HubSpot, Salesforce, Pipedrive.\n3. **Pasa el lead** a tu equipo de ventas con toda la conversación.\nLead Laundry consiguió **+35 % de conversión** y Emma **−30 % de coste por lead**.\n' + SIGNUP,
+        f: ['Reservar una demo', 'Crear con IA', '¿Funciona con mi CRM?'] },
+  pt: { a: 'Landbot transforma visitas em leads qualificados, no próprio chat do seu site.\n1. **Qualifique** com poucas perguntas naturais em vez de um formulário longo.\n2. **Agende a reunião** no chat, ou envie o lead para o seu CRM: HubSpot, Salesforce, Pipedrive.\n3. **Passe o lead** para o seu time de vendas com toda a conversa.\nLead Laundry conseguiu **+35% de conversão** e Emma **−30% de custo por lead**.\n' + SIGNUP,
+        f: ['Agendar uma demo', 'Criar com IA', 'Funciona com o meu CRM?'] },
+  tpl: ['t13', 't23', 't16']
+};
+const WAPP = {
+  en: { a: 'Landbot puts an AI agent on your WhatsApp number that answers, recommends and sells 24/7.\n1. **Answer product and order questions** with your own knowledge.\n2. **Qualify and recommend**, then send the booking or payment link.\n3. **Hand over** to a person when needed, with the context.\nHotelbeds handles **350,000 WhatsApp queries** with Landbot, live in 4 weeks. Your own number comes with the **Professional + WhatsApp** plan.\n' + SIGNUP,
+        f: ['Book a demo', 'Build with AI', 'How much is the WhatsApp plan?'] },
+  es: { a: 'Landbot pone un agente de IA en tu número de WhatsApp que responde, recomienda y vende 24/7.\n1. **Responde dudas de producto y pedidos** con tu propio conocimiento.\n2. **Cualifica y recomienda**, y envía el enlace de reserva o de pago.\n3. **Pasa a una persona** cuando hace falta, con el contexto.\nHotelbeds atiende **350.000 consultas por WhatsApp** con Landbot, en marcha en 4 semanas. Tu propio número va con el plan **Professional + WhatsApp**.\n' + SIGNUP,
+        f: ['Reservar una demo', 'Crear con IA', '¿Cuánto cuesta el plan de WhatsApp?'] },
+  pt: { a: 'Landbot coloca um agente de IA no seu número de WhatsApp que responde, recomenda e vende 24/7.\n1. **Responda dúvidas de produto e pedidos** com o seu próprio conhecimento.\n2. **Qualifique e recomende**, e envie o link de agendamento ou de pagamento.\n3. **Passe para uma pessoa** quando precisar, com o contexto.\nHotelbeds atende **350.000 consultas pelo WhatsApp** com Landbot, no ar em 4 semanas. O seu próprio número vem com o plano **Professional + WhatsApp**.\n' + SIGNUP,
+        f: ['Agendar uma demo', 'Criar com IA', 'Quanto custa o plano de WhatsApp?'] },
+  tpl: ['t11', 't42', 't10']
+};
+const SUPP = {
+  en: { a: 'Landbot answers your customers 24/7 with your own knowledge, and passes the hard cases to your team.\n1. **Answer FAQs and account questions** from your help content.\n2. **Route** each case to the right team, with the conversation attached.\n3. **Hand over live** to a person when the customer needs one.\nCASFID cut manual messages by **70%**, and Allianz Benelux routes customers in **under a minute**.\n' + SIGNUP,
+        f: ['Book a demo', 'Build with AI', 'Is my data safe?'] },
+  es: { a: 'Landbot atiende a tus clientes 24/7 con tu propio conocimiento y pasa los casos difíciles a tu equipo.\n1. **Responde preguntas frecuentes y de cuenta** con tu contenido de ayuda.\n2. **Deriva** cada caso al equipo adecuado, con la conversación adjunta.\n3. **Pasa en directo** a una persona cuando el cliente lo necesita.\nCASFID redujo un **70 %** los mensajes manuales y Allianz Benelux deriva a sus clientes en **menos de un minuto**.\n' + SIGNUP,
+        f: ['Reservar una demo', 'Crear con IA', '¿Mis datos están seguros?'] },
+  pt: { a: 'Landbot atende os seus clientes 24/7 com o seu próprio conhecimento e passa os casos difíceis para o seu time.\n1. **Responda perguntas frequentes e de conta** com o seu conteúdo de ajuda.\n2. **Encaminhe** cada caso para o time certo, com a conversa anexada.\n3. **Passe ao vivo** para uma pessoa quando o cliente precisar.\nCASFID reduziu em **70%** as mensagens manuais e Allianz Benelux encaminha os clientes em **menos de um minuto**.\n' + SIGNUP,
+        f: ['Agendar uma demo', 'Criar com IA', 'Meus dados estão seguros?'] },
+  tpl: ['t21', 't14', 't20']
+};
+const fNote = (what) => `(They already saw the page's overview of ${what}: do not repeat it.)`;
+/* third level: the concrete questions under those answers, also fixed (17-nov-2026). Facts only from the agent's KNOWLEDGE.
+   The WhatsApp price is computed with the page's own PRICE table (EUR or USD by country) and the plan card is drawn below it. */
+const AIS = {
+  en: { a: 'You can build with the AI you already use.\n1. **Claude** (claude.ai or the desktop app): add the Landbot connector and skills.\n2. **Claude Code**: install the Landbot plugin with one command.\n3. **ChatGPT, Codex or Cursor**: connect the Landbot MCP. ChatGPT is in beta and also works on its Free plan.\nAny other MCP client connects at https://mcp.landbot.io/mcp. The setup for each one is at https://landbot.io/build-with-ai', f: ['Is it free?', 'Book a demo'] },
+  es: { a: 'Puedes construir con la IA que ya usas.\n1. **Claude** (claude.ai o la app de escritorio): añade el conector y las skills de Landbot.\n2. **Claude Code**: instala el plugin de Landbot con un solo comando.\n3. **ChatGPT, Codex o Cursor**: conecta el MCP de Landbot. ChatGPT está en beta y funciona también con su plan Free.\nCualquier otro cliente MCP se conecta en https://mcp.landbot.io/mcp. Los pasos para cada una están en https://landbot.io/build-with-ai', f: ['¿Es gratis?', 'Reservar una demo'] },
+  pt: { a: 'Você pode construir com a IA que já usa.\n1. **Claude** (claude.ai ou o app de desktop): adicione o conector e as skills de Landbot.\n2. **Claude Code**: instale o plugin de Landbot com um único comando.\n3. **ChatGPT, Codex ou Cursor**: conecte o MCP de Landbot. ChatGPT está em beta e também funciona no plano Free dele.\nQualquer outro cliente MCP se conecta em https://mcp.landbot.io/mcp. O passo a passo de cada uma está em https://landbot.io/build-with-ai', f: ['É grátis?', 'Agendar uma demo'] }
+};
+const FREE = {
+  en: { a: 'Yes, you can start free. The **Free** plan costs nothing: 100 chats a month, the full builder and a WhatsApp test number. It does not include AI chats.\nPaid plans come with a **14-day free trial**, no card needed. After it, your account moves to Free.\n' + SIGNUP, f: ['Which AI can I use?', 'Book a demo'] },
+  es: { a: 'Sí, puedes empezar gratis. El plan **Free** no cuesta nada: 100 chats al mes, el builder completo y un número de prueba de WhatsApp. No incluye chats con IA.\nLos planes de pago tienen **14 días de prueba gratis**, sin tarjeta. Después, tu cuenta pasa a Free.\n' + SIGNUP, f: ['¿Qué IA puedo usar?', 'Reservar una demo'] },
+  pt: { a: 'Sim, você pode começar grátis. O plano **Free** não custa nada: 100 chats por mês, o builder completo e um número de teste do WhatsApp. Não inclui chats com IA.\nOs planos pagos têm **14 dias de teste grátis**, sem cartão. Depois, a sua conta passa para Free.\n' + SIGNUP, f: ['Qual IA posso usar?', 'Agendar uma demo'] }
+};
+const CRM = {
+  en: { a: 'Yes. Landbot connects **two-way with HubSpot and Salesforce**, and also with Pipedrive and Zoho: it reads and updates your CRM during the conversation.\nIt also works with Google Sheets, Airtable, Slack, Calendly, Stripe, Zapier, n8n and webhooks.\nCRM integrations come with the **Professional** plan and above.', f: ['Book a demo', 'Is it free?'] },
+  es: { a: 'Sí. Landbot se conecta **en las dos direcciones con HubSpot y Salesforce**, y también con Pipedrive y Zoho: lee y actualiza tu CRM durante la conversación.\nTambién funciona con Google Sheets, Airtable, Slack, Calendly, Stripe, Zapier, n8n y webhooks.\nLas integraciones con CRM van con el plan **Professional** o superior.', f: ['Reservar una demo', '¿Es gratis?'] },
+  pt: { a: 'Sim. Landbot se conecta **nas duas direções com HubSpot e Salesforce**, e também com Pipedrive e Zoho: lê e atualiza o seu CRM durante a conversa.\nTambém funciona com Google Sheets, Airtable, Slack, Calendly, Stripe, Zapier, n8n e webhooks.\nAs integrações com CRM vêm com o plano **Professional** ou superior.', f: ['Agendar uma demo', 'É grátis?'] }
+};
+const waP = () => [PRICE.s + (PRICE.pro[0] + PRICE.wa[0]), PRICE.s + (PRICE.pro[1] + PRICE.wa[1])];
+const WAPRICE = {
+  en: { a: () => { const [a, m] = waP(); return `**Professional + WhatsApp** costs **${a}/mo** billed annually, or ${m}/mo billed monthly, before tax.\nIt includes 1 WhatsApp number, 500 AI chats and 2,500 chats a month, with CRM integrations.\nYou can try it free for 14 days, no card needed.`; }, f: ['Book a demo', 'Is it free?'], plan: 'prowa' },
+  es: { a: () => { const [a, m] = waP(); return `**Professional + WhatsApp** cuesta **${a}/mes** con pago anual, o ${m}/mes con pago mensual, antes de impuestos.\nIncluye 1 número de WhatsApp, 500 chats con IA y 2.500 chats al mes, con integraciones de CRM.\nPuedes probarlo gratis 14 días, sin tarjeta.`; }, f: ['Reservar una demo', '¿Es gratis?'], plan: 'prowa' },
+  pt: { a: () => { const [a, m] = waP(); return `**Professional + WhatsApp** custa **${a}/mês** com pagamento anual, ou ${m}/mês com pagamento mensal, antes de impostos.\nInclui 1 número de WhatsApp, 500 chats com IA e 2.500 chats por mês, com integrações de CRM.\nVocê pode testar grátis por 14 dias, sem cartão.`; }, f: ['Agendar uma demo', 'É grátis?'], plan: 'prowa' }
+};
+const SAFE = {
+  en: { a: 'Yes. Landbot is **GDPR** compliant and **SOC 2** certified, with **EU hosting**.\nYour chats are not used to train AI models.', f: ['Book a demo', 'Is it free?'] },
+  es: { a: 'Sí. Landbot cumple el **RGPD** y tiene la certificación **SOC 2**, con **alojamiento en la UE**.\nTus chats no se usan para entrenar modelos de IA.', f: ['Reservar una demo', '¿Es gratis?'] },
+  pt: { a: 'Sim. Landbot cumpre o **GDPR** e tem a certificação **SOC 2**, com **hospedagem na UE**.\nOs seus chats não são usados para treinar modelos de IA.', f: ['Agendar uma demo', 'É grátis?'] }
+};
+const BWAI_NOTE = '(They already saw the Build with AI steps and link: do not repeat them.)';   // short: the agent fails on long messages
+/* a fixed answer drawn by the page: the session may start meanwhile, and only a new visitor message stops it.
+   A numbered list stays in one bubble; every other line is its own bubble. */
+async function fixedAnswer(c, strip, tpl) {
+  const seq = st.userSeq, live = () => seq === st.userSeq, reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, bubbles = [];
+  const text = typeof c.a === 'function' ? c.a() : c.a;   // the WhatsApp price is computed (EUR or USD)
+  text.split('\n').forEach((l) => { const item = /^\d+[.)]\s/.test(l), prev = bubbles[bubbles.length - 1]; if (item && prev && prev.list) prev.lines.push(l); else bubbles.push({ list: item, lines: [l] }); });
+  for (let i = 0; i < bubbles.length; i++) {
+    if (i > 0 && !reduce) { const dots = push(h(thinkHTML(''))); await sleep(450); dots.remove(); }
+    if (!live()) return;
+    const el = push(h(`<div class="awe-msg">${md(bubbles[i].lines.join('\n'))}</div>`)); if (i === 0) { st.anchor = el; ding(); }
+  }
+  st.tplForce = tpl || null;   // its own three templates (leads / WhatsApp / support), whatever words the answer uses
+  const strips = () => thread.querySelectorAll('.awe-tplstrip').length, before = strips();   // one strip per fixed answer
+  if (strip) for (let k = 0; k < 2 && live() && strips() === before; k++) await tplStrip(text);
+  if (c.plan && live()) planCard(c.plan);   // the page's own plan card, same prices   // a second try if the session started mid-load
+  st.tplForce = null;
+  if (!live()) return;
+  const fx = tierNow() === 'C' ? c.f.filter((x) => !BOOK_N.has(normQ(x))) : c.f;   // geo C: never offer the demo or sales (they can still ask for it)
+  repliesEl.innerHTML = fx.map((x) => `<button type="button" class="awe-chip" data-awe-say="${esc(x)}">${esc(x)}</button>`).join('');
+}
 const MAX_MSG = 700;   // longer messages made the agent fail ('something went wrong'): 750 worked, 900 failed on 30-oct; Sales asked for a cap
 async function say(text, payload) {
   let q = (text || '').trim(); if (!q) return;
@@ -477,9 +637,19 @@ async function say(text, payload) {
   push(h(`<div class="awe-me">${esc(q)}</div>`));
   if (cut) push(h(`<div class="awe-sub" style="text-align:right;margin:-4px 2px 6px">${esc(T.tooLong(MAX_MSG.toLocaleString(LANG === 'en' ? 'en' : 'es')))}</div>`));
   if (!payload) followLang(q); readUser(q); setWorking(guessSection(q));
+  const fast = !payload && BOOK_N.has(normQ(q));
+  if (fast) { fastStart(); setWorking(null); bookCard(); }
+  const nq = normQ(q), FIXED = [[BWAI_N, BWAI, BWAI_NOTE, true], [HELP_N, HELP, HELP_NOTE, false], [LEADS_N, LEADS, fNote('Landbot for leads'), true], [WAPP_N, WAPP, fNote('Landbot on WhatsApp'), true], [SUPP_N, SUPP, fNote('Landbot for support'), true],
+    [AIS_N, AIS, fNote('which AI tools work with Landbot'), false], [FREE_N, FREE, fNote('the Free plan and the trial'), false], [CRM_N, CRM, fNote('the CRM integrations'), false], [WAPRICE_N, WAPRICE, fNote('the WhatsApp plan price'), false], [SAFE_N, SAFE, fNote('security (GDPR, SOC 2, EU hosting)'), false]];
+  const hit = payload ? null : FIXED.find(([m]) => m.has(nq)), fixed = hit && [hit[1], hit[2], hit[3], hit[0].get(nq)];
+  if (fixed) {
+    if (fixed[3] !== LANG && DICT[fixed[3]]) { LANG = fixed[3]; T = DICT[LANG]; paint(); }   // same switch as followLang()
+    st.fixedNote = fixed[1]; setWorking(null); fixedAnswer(fixed[0][LANG] || fixed[0].en, fixed[2], fixed[0].tpl); return;
+  }   // answered here, nothing sent to the agent
   let out = q;
   if (!st.ctxSent && !payload) { st.ctxSent = true; out = contextLine() + '\n\n' + q; }
-  armWatchdog(q);
+  if (st.fixedNote && !payload) { out = out.slice(0, out.length - q.length) + st.fixedNote + '\n' + q; st.fixedNote = ''; }   // after the context line, right before their words
+  if (!fast) armWatchdog(q);
   try { await deliver(payload ? q : out, payload); }
   catch (e) { setWorking(null); push(h(`<div class="awe-msg"><p>Something went wrong reaching the agent. Try again in a moment.</p></div>`)); console.warn('[awe]', e); }
 }
@@ -522,9 +692,16 @@ async function handleMsg(m, ex, bid) {
   setWorking(null);
   const text = m.message || m.title || '';
   if (m.type === 'dialog' && (m.buttons || []).length && !ex.is_ai_agent_message) st.flowBtns = m.buttons.map((t, i) => ({ text: t, payload: (m.payloads || [])[i] }));
+  if (st.fastBook) {   // the booking card is already on screen
+    if (bid === 'sales_book') { fastEnd(false); if (!thread.querySelector('.awe-book')) bookCard(); return; }
+    /* anything else (a late answer to an earlier question, the agent's error when two messages cross) is not shown: the visitor already has the card.
+       The routing gets 8 s more; if it never comes, reroute() runs before any booking button. */
+    clearTimeout(st.fastT); st.fastT = setTimeout(() => fastEnd(true), 8000);
+    return;
+  }
   if (bid === 'team_email') { emailCard(); return; }
   if (bid === 'team_done') { receipts(); return; }
-  if (bid === 'sales_book') { bookCard(); return; }
+  if (bid === 'sales_book') { if (st.salesMissed) { st.salesMissed = false; const c = [...thread.querySelectorAll('.awe-book')].pop(); if (c && !c.querySelector('.awe-receipt')) return; } bookCard(); return; }
   if (bid === 'sales_booked') { await agentText(T.bookedMsg); return; }
   if (bid === 'support_route') { supportCard(); return; }
   if (bid === 'team_more') { repliesEl.innerHTML = `<button type="button" class="awe-chip" data-awe-say="${esc(T.oneMore)}" data-awe-payload="$0">${esc(T.oneMore)}</button>`; return; }
@@ -553,7 +730,7 @@ function splitSources(text) {
   for (const line of text.split(/\n/)) { const mm = line.replace(/[*_]/g, '').match(/^\s*(sources?|fuentes?|fontes?)\s*:\s*(.+)$/i); if (mm) src.push(mm[2]); else keep.push(line); }
   return { body: keep.join('\n').trim(), src: src.join(' · ') };
 }
-function sourceChips(s) {
+function sourceChips(s) {   // no longer drawn under replies (Fabo, 17-nov-2026: the "LANDBOT.IO Home" chip added nothing); kept for reference
   if (!s) return '';
   const chips = []; const seen = new Set();
   for (const part of s.split(/\s*[·,]\s*/)) for (const [re, id] of SRC_MAP) if (re.test(part) && !seen.has(id)) {
@@ -626,8 +803,8 @@ async function templateCards(ids, more = true, after = null) {
 }
 /* after the prompt card: three templates that fit the case, as phone mockups; a tap opens the live template full screen in a new tab (10-nov-2026) */
 const TPL_PICKS = [
-  [/whatsapp/i, ['t01', 't42', 't26']],
-  [/shop|store|e-?commerce|cart|order|tienda|carrito|pedido|loja|carrinho/i, ['t25', 't26', 't17']],
+  [/whatsapp/i, ['t11', 't42', 't10']],
+  [/shop|store|e-?commerce|cart|order|tienda|carrito|pedido|loja|carrinho/i, ['t25', 't10', 't17']],
   [/support|soporte|suporte|ticket|help ?desk|faq|atenci/i, ['t21', 't14', 't20']],
   [/appointment|reservation|reserva|\bcitas?\b|clinic|cl[ií]nica|dentist|restaurant|hotel|sal[oó]n/i, ['t19', 't29', 't13']],
   [/real estate|propert|inmobili|imobili|piso|apartment/i, ['t15', 't53', 't13']],
@@ -637,7 +814,7 @@ const TPL_PICKS = [
 async function tplStrip(code) {
   const f = st.facts, K = { wa: 'whatsapp', both: 'whatsapp', support: 'support', leads: 'lead' };
   const hay = [st.lastQ || '', code, f.use ? K[f.use.k] || '' : '', f.chan ? K[f.chan.k] || '' : ''].join(' ');   // what the visitor said first, then the prompt
-  const pick = (TPL_PICKS.find(([re]) => re.test(hay)) || [null, ['t13', 't23', 't46']])[1];
+  const pick = st.tplForce || (TPL_PICKS.find(([re]) => re.test(hay)) || [null, ['t13', 't23', 't46']])[1];
   const cat = await tplLoad(), xs = pick.map((id) => cat.find((c) => c.id === id)).filter(Boolean);
   if (xs.length < 2) return;
   push(h(`<div class="awe-card awe-tplstrip"><span class="awe-tag">${esc(T.stripH)}</span><div class="awe-sub" style="margin-top:0">${esc(T.stripSub)}</div>
@@ -711,7 +888,7 @@ async function agentText(text) {
     const bm = parts[i].match(/^§§(\d+)$/);
     if (bm) { const b = blocks[+bm[1]]; if (b.kind === 'prompt') continue;   // no copy-paste prompt card any more: templates instead (Fabo, 10-nov-2026)
       const el = push(flowCard(b.code.split(/\n/).map((l) => l.trim()).filter(Boolean))); if (i === 0) { st.anchor = el; ding(); } continue; }
-    const el = push(h(`<div class="awe-msg">${md(parts[i])}${i === parts.length - 1 ? sourceChips(src) : ''}</div>`));
+    const el = push(h(`<div class="awe-msg">${md(parts[i])}</div>`));
     if (i === 0) { st.anchor = el; ding(); }
     await blogCard(el);
   }
@@ -824,8 +1001,8 @@ function maybePlan(ex) {
   if (!ex.is_ai_agent_message || st.planEl) return;
   const f = st.facts; if ((f.chan || f.use) && (f.size || f.vol || f.crm)) planCard();
 }
-function planCard() {
-  const p = pickPlan(), C = PLAN_COPY[LANG], [name, inc] = C[p];
+function planCard(force) {
+  const p = force || pickPlan(), C = PLAN_COPY[LANG], [name, inc] = C[p];
   const price = p === 'biz' ? `<b style="font:700 22px/1 'DM Sans'">${esc(T.custom)}</b>`
     : (() => { const a = p === 'starter' ? PRICE.starter[0] : p === 'pro' ? PRICE.pro[0] : PRICE.pro[0] + PRICE.wa[0], m = p === 'starter' ? PRICE.starter[1] : p === 'pro' ? PRICE.pro[1] : PRICE.pro[1] + PRICE.wa[1];
       return `<b style="font:700 26px/1 'DM Sans'">${PRICE.s}${a}</b><span class="awe-sub" style="display:inline">${esc(T.perMo)} · ${esc(T.annual)} · ${esc(T.monthlyP(PRICE.s + m))}</span>`; })();
@@ -1100,7 +1277,7 @@ async function newConversation() {
   await restartSession();
   if (LANG !== PAGE_LANG) { LANG = PAGE_LANG; T = DICT[LANG]; paint(); }
   closeCal(false);
-  Object.assign(st, { restarted: false, userMsgs: [], answers: 0, nbaKey: '', items: new Set(), plan: null, planEl: null, teamDone: false, hot: 0, mailMode: 'team', fromBook: false, demoLang: null, cited: new Set(), awaiting: null, facts: {} });
+  Object.assign(st, { fixedNote: '', fastBook: false, salesMissed: false, salesReady: null, restarted: false, userMsgs: [], answers: 0, nbaKey: '', items: new Set(), plan: null, planEl: null, teamDone: false, hot: 0, mailMode: 'team', fromBook: false, demoLang: null, cited: new Set(), awaiting: null, facts: {} });
   initFacts(); thread.innerHTML = ''; repliesEl.innerHTML = ''; setWorking(null); renderFacts(); openPanel(); keepFocus(true);
 }
 function setTheme(t, remember) {
