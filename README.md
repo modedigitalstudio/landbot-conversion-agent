@@ -12,6 +12,7 @@ Each page's loader is pasted into Webflow **once**. After that, updating the age
 | `/blog/create-whatsapp-bot` | [`bundles/lb-awe-create-whatsapp-bot.js`](bundles/lb-awe-create-whatsapp-bot.js) | [`webflow/loader-blog-create-whatsapp-bot.html`](webflow/loader-blog-create-whatsapp-bot.html) (Blog Posts Template) |
 | `/blog/black-friday-chatbot` | [`bundles/lb-awe-bf-chatbot.js`](bundles/lb-awe-bf-chatbot.js) | [`webflow/loader-blog-bf-chatbot.html`](webflow/loader-blog-bf-chatbot.html) (in the Layout v2 article embed) |
 | `/blog/black-friday-customer-service`, `/es/blog/atencion-al-cliente-black-friday`, `/pt-br/blog/atendimento-ao-cliente-black-friday` | [`bundles/lb-awe-bf-customer-service.js`](bundles/lb-awe-bf-customer-service.js) | [`webflow/loader-blog-bf-customer-service.html`](webflow/loader-blog-bf-customer-service.html) (in the Layout v2 article embed of the EN, ES and PT blog templates) |
+| `/blog/reduce-whatsapp-api-costs`, `/es/blog/reduce-whatsapp-api-costs`, `/pt-br/blog/reduce-whatsapp-api-costs` | [`bundles/lb-awe-reduce-whatsapp-api-costs.js`](bundles/lb-awe-reduce-whatsapp-api-costs.js) | [`webflow/loader-blog-reduce-whatsapp-api-costs.html`](webflow/loader-blog-reduce-whatsapp-api-costs.html) (Before `</body>` of the EN, ES and PT blog templates) |
 | whole site | (none, inline) | [`webflow/site-footer-lb-journey.html`](webflow/site-footer-lb-journey.html) |
 
 ## Two branches: staging and main
@@ -62,6 +63,7 @@ Use the loader from `webflow/`, not the `loader.js` from the client's package (t
 - **Pricing:** Pages → Pricing → same place. Remove the old `landbot-widget` Embed first (see the client's LEIA-ME).
 - **Agent Studio LP:** Pages → lp / agent-studio → same place.
 - **WhatsApp pricing post:** Pages → Blog Posts Template → same place. Replace the existing loader that points at `…_lb-awe-wa-pricing.txt`.
+- **Reduce WhatsApp API costs posts:** Before `</body>` of the EN Blog Posts Template and of the ES and PT blog templates (the ES/PT posts render from their own templates).
 - **Create WhatsApp Bot post:** Pages → Blog Posts Template → same place, below the WhatsApp pricing loader. Template code runs on every post, but each loader checks the URL first and does nothing on other posts.
 - **lb-journey** is pasted inline in Site settings → Custom code → Footer code. It is not on the CDN, so a change to it still needs a re-paste (`scripts/update.sh` warns when that happens).
 
