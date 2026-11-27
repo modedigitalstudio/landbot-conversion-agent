@@ -8,6 +8,7 @@ Each page's loader is pasted into Webflow **once**. After that, updating the age
 | `/`, `/es`, `/pt-br` | [`bundles/lb-awe-home.js`](bundles/lb-awe-home.js) | [`webflow/loader-home.html`](webflow/loader-home.html) |
 | `/pricing` | [`bundles/lb-awe-pricing.js`](bundles/lb-awe-pricing.js) | [`webflow/loader-pricing.html`](webflow/loader-pricing.html) |
 | `/lp/agent-studio` | [`bundles/lb-awe-agent-studio.js`](bundles/lb-awe-agent-studio.js) | [`webflow/loader-agent-studio.html`](webflow/loader-agent-studio.html) |
+| `/lp/chatbot-creator-x-v2` (new brand LP only; checks for Land's glyph `svg[data-land]`) | [`bundles/lb-awe-lp-ccx.js`](bundles/lb-awe-lp-ccx.js) | [`webflow/loader-lp-ccx.html`](webflow/loader-lp-ccx.html) |
 | `/blog/whatsapp-business-api-pricing-change-october` | [`bundles/lb-awe-wa-pricing.js`](bundles/lb-awe-wa-pricing.js) | [`webflow/loader-blog-wa-pricing.html`](webflow/loader-blog-wa-pricing.html) |
 | `/blog/create-whatsapp-bot` | [`bundles/lb-awe-create-whatsapp-bot.js`](bundles/lb-awe-create-whatsapp-bot.js) | [`webflow/loader-blog-create-whatsapp-bot.html`](webflow/loader-blog-create-whatsapp-bot.html) (Blog Posts Template) |
 | `/blog/black-friday-chatbot` | [`bundles/lb-awe-bf-chatbot.js`](bundles/lb-awe-bf-chatbot.js) | [`webflow/loader-blog-bf-chatbot.html`](webflow/loader-blog-bf-chatbot.html) (in the Layout v2 article embed) |
@@ -62,6 +63,7 @@ Use the loader from `webflow/`, not the `loader.js` from the client's package (t
 - **Home:** Pages → Home, ES home and PT-BR home → ⚙️ → Custom code → Before `</body>` tag. Replace the old Conversion Agent loader if there is one.
 - **Pricing:** Pages → Pricing → same place. Remove the old `landbot-widget` Embed first (see the client's LEIA-ME).
 - **Agent Studio LP:** Pages → lp / agent-studio → same place.
+- **New brand LP (Land):** Pages → lp / chatbot-creator-x-v2 → same place. Not on the original `/lp/chatbot-creator-x` (it keeps its CEO Tools widget). The page's own script also needs the two edits in the client's `MAIN-JS-CAMBIOS.md` (exit pop-up stays closed while the chat is open; chat Calendly bookings count as `booking_source: conversion-agent`).
 - **WhatsApp pricing post:** Pages → Blog Posts Template → same place. Replace the existing loader that points at `…_lb-awe-wa-pricing.txt`.
 - **Reduce WhatsApp API costs posts:** Before `</body>` of the EN Blog Posts Template and of the ES and PT blog templates (the ES/PT posts render from their own templates).
 - **Create WhatsApp Bot post:** Pages → Blog Posts Template → same place, below the WhatsApp pricing loader. Template code runs on every post, but each loader checks the URL first and does nothing on other posts.
