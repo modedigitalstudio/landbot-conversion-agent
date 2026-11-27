@@ -1,0 +1,1443 @@
+/* Landbot Slim Conversion Agent · /lp/chatbot-creator-x · built 2026-11-26 */
+/* lb-journey · first-party record of how a visitor moves through the site, for the Conversion Agent's handoff.
+   Runs on every page of the site. Records ONLY after analytics consent (CookieFirst "performance").
+   Stores in this browser only (localStorage "lb-journey-v1"): referrer host, UTMs, landing page, pages with time and scroll,
+   visit count. Nothing is sent anywhere by this script; the agent reads it when the visitor talks to it. */
+(function () {
+  if (window.lbJourney) return;                         // already running (site-wide snippet + page bundle)
+  var KEY = 'lb-journey-v1', GAP = 30 * 60 * 1000, MAX_PAGES = 30, MAX_SESSIONS = 3;
+  function demoHost() { return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) || location.protocol === 'file:'; }
+  function consent() {
+    var c = window.CookieFirst;
+    if (!c) return demoHost();                         // no consent manager: only on a local demo copy
+    return !!(c.hasConsented && c.consent && c.consent.performance);
+  }
+  function load() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } }
+  function save(j) { try { localStorage.setItem(KEY, JSON.stringify(j)); } catch (e) {} }
+  function utm() {
+    var q = new URLSearchParams(location.search), o = {};
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) { if (q.get(k)) o[k.slice(4)] = q.get(k).slice(0, 80); });
+    if (q.get('gclid')) o.ad = 'google_ads'; if (q.get('fbclid')) o.ad = 'meta_ads'; if (q.get('li_fat_id')) o.ad = 'linkedin_ads';
+    return o;
+  }
+  function refHost() { try { var h = new URL(document.referrer).hostname.replace(/^www\./, ''); return h === location.hostname.replace(/^www\./, '') ? '' : h; } catch (e) { return ''; } }
+  function seedDemo(j) {                              // ?journey=demo on a local copy: a believable earlier path, clearly marked
+    var now = Date.now();
+    j.first = now - 3 * 864e5; j.visits = 2; j.demo = true;
+    j.sessions = [{ start: now - 3 * 864e5, last: now - 3 * 864e5 + 6e4, ref: 'google.com', utm: {}, landing: '/whatsapp-business-api', pages: [{ p: '/whatsapp-business-api', t: 'WhatsApp Business API', ts: now - 3 * 864e5, d: 62, sc: 70 }] },
+      { start: now - 2e5, last: now - 2e4, ref: 'chatgpt.com', utm: { source: 'chatgpt.com' }, landing: '/pricing', pages: [
+        { p: '/pricing', t: 'Pricing', ts: now - 2e5, d: 41, sc: 85 }, { p: '/whatsapp', t: 'WhatsApp chatbot', ts: now - 1.5e5, d: 70, sc: 60 }] }];
+    return j;
+  }
+  var started = false;
+  function track() {
+    if (started || !consent()) return; started = true;
+    var now = Date.now(), j = load() || { first: now, visits: 0, sessions: [] };
+    if (demoHost() && /(^|[?&])journey=demo\b/.test(location.search) && !j.demo) j = seedDemo({});
+    var s = j.sessions[j.sessions.length - 1], ext = refHost();
+    if (!s || now - s.last > GAP || ext) {
+      s = { start: now, last: now, ref: ext, utm: utm(), landing: location.pathname, pages: [] };
+      j.sessions.push(s); j.visits = (j.visits || 0) + 1;
+      if (j.sessions.length > MAX_SESSIONS) j.sessions.shift();
+    }
+    var pg = { p: location.pathname, t: document.title.slice(0, 80), ts: now, d: 0, sc: 0 };
+    s.pages.push(pg); if (s.pages.length > MAX_PAGES) s.pages.shift(); s.last = now; save(j);
+    var t0 = now, maxSc = 0;
+    addEventListener('scroll', function () { var h = document.documentElement.scrollHeight - innerHeight; if (h > 0) maxSc = Math.max(maxSc, Math.round(scrollY / h * 100)); }, { passive: true });
+    function flush() {
+      var jj = load(); if (!jj || !jj.sessions.length) return;
+      var ss = jj.sessions[jj.sessions.length - 1], last = ss.pages[ss.pages.length - 1];
+      if (last && last.ts === pg.ts) { last.d = Math.round((Date.now() - t0) / 1000); last.sc = maxSc; ss.last = Date.now(); save(jj); }
+    }
+    addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(); });
+    addEventListener('pagehide', flush); setInterval(flush, 15000);
+  }
+  function dur(s) { return s >= 60 ? Math.floor(s / 60) + 'm ' + (s % 60) + 's' : s + 's'; }
+  /* A compact, human-readable account of the journey, for the agent and for the team */
+  function describe() {
+    var j = load(); if (!j || !j.sessions.length) return null;
+    var s = j.sessions[j.sessions.length - 1], here = location.pathname;
+    var before = s.pages.filter(function (p) { return p.p !== here; }).slice(-6).map(function (p) { return p.p + (p.d ? ' (' + dur(p.d) + ')' : ''); });
+    var u = s.utm || {}, camp = u.campaign ? u.campaign + (u.source ? ' (' + u.source + (u.medium ? '/' + u.medium : '') + ')' : '') : (u.ad || '');
+    var prev = j.sessions.length > 1 ? j.sessions[j.sessions.length - 2] : null;
+    var days = Math.round((Date.now() - (j.first || s.start)) / 864e5);
+    return {
+      from: s.ref || (u.source || 'direct'), campaign: camp, landing: s.landing, before: before,
+      visit: j.visits || 1, firstDaysAgo: days, previous: prev ? (prev.ref || 'direct') + ' → ' + prev.pages.map(function (p) { return p.p; }).slice(0, 4).join(' → ') : '', demo: !!j.demo
+    };
+  }
+  function line() {                                      // the "[Page context: …]" line the agent reads
+    var d = describe(); if (!d) return '';
+    var parts = ['came from ' + d.from];
+    if (d.campaign) parts.push('campaign ' + d.campaign);
+    if (d.landing && d.landing !== location.pathname) parts.push('landed on ' + d.landing);
+    if (d.before.length) parts.push('before this article: ' + d.before.join(' → '));
+    parts.push(d.visit > 1 ? 'visit ' + d.visit + ', first ' + (d.firstDaysAgo ? d.firstDaysAgo + ' days ago' : 'today') : 'first visit');
+    if (d.previous) parts.push('previous visit: ' + d.previous);
+    return '[Page context: ' + parts.join(' · ') + ']';
+  }
+  window.lbJourney = { track: track, get: load, describe: describe, line: line, consent: consent };
+  if (consent()) track();
+  ['cf_init', 'cf_consent', 'cf_consent_loaded'].forEach(function (ev) { addEventListener(ev, track); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', track); else setTimeout(track, 0);
+})();
+
+(() => { if (document.getElementById('awe-style')) return; const s = document.createElement('style'); s.id = 'awe-style'; s.textContent = "\n  :root{--awe-grad:linear-gradient(135deg,#FF3F7B 0%,#5A60F6 100%);--awe-ink:#1B2139;--awe-text:#3A3D5C;--awe-mut:#5D6079;--awe-line:#E5E6EA;--awe-soft:#F4F4FF;--awe-p:#5A60F6;--awe-p7:#4047C4}\n  .awe-orb{flex-shrink:0;width:34px;height:34px;border-radius:50%;position:relative;\n    background:conic-gradient(from 0deg,#5A60F6,#4FCCC2,#F58B0B,#FF3F7B,#5A60F6);animation:awe-spin 7s linear infinite}\n  .awe-orb::after{content:\"\";position:absolute;inset:22%;border-radius:50%;background:radial-gradient(circle at 35% 35%,rgba(255,255,255,.9),rgba(255,255,255,.15) 60%,transparent 70%)}\n  .awe-orb.sm{width:24px;height:24px}\n  .awe-orb.work{animation-duration:1.4s}\n  @keyframes awe-spin{to{transform:rotate(360deg)}}\n\n  .awe-compose{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 16px;border-radius:14px;border:1px solid var(--awe-line);background:#fff;transition:border-color .2s,box-shadow .2s}\n  .awe-compose:focus-within{border-color:var(--awe-p);box-shadow:0 0 0 3px rgba(90,96,246,.15)}\n  .awe-compose input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:500 15px/1.4 'DM Sans';color:var(--awe-ink);padding:8px 0}\n  .awe-compose input::placeholder{color:#9596A7}\n  .awe-send{all:unset;cursor:pointer;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--awe-grad);color:#fff;font:700 16px/1 'DM Sans'}\n  .awe-chips{display:flex;flex-wrap:wrap;gap:8px}\n  .awe-chip{all:unset;cursor:pointer;padding:7px 13px;border-radius:999px;border:1px solid #CFD1FE;background:#fff;color:var(--awe-p7);font:500 13.5px/1.2 'DM Sans';transition:background .15s,border-color .15s}\n  .awe-chip:hover{background:var(--awe-soft);border-color:var(--awe-p)}\n  .awe-chip:focus-visible{box-shadow:0 0 0 3px rgba(90,96,246,.35)}\n\n  /* Lava orb (from the orb widget example) */\n  .awe-lava{display:block;position:relative;flex-shrink:0;width:56px;height:56px;border-radius:50%;cursor:pointer}\n  .awe-lava svg{position:absolute;inset:0;width:100%;height:100%;animation:awe-breathe 9s ease-in-out infinite}\n  .awe-lava .g1{animation:awe-mb1 5.2s ease-in-out infinite}.awe-lava .g2{animation:awe-mb2 6s ease-in-out infinite}\n  .awe-lava .g3{animation:awe-mb3 4.6s ease-in-out infinite}.awe-lava .g4{animation:awe-mb4 5.6s ease-in-out infinite}\n  .awe-lava .g5{animation:awe-mb5 4s ease-in-out infinite}\n  .awe-lava.sm{width:30px;height:30px;cursor:default}\n  .awe-lava.work svg{animation-duration:1.6s}\n  @keyframes awe-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}\n  @keyframes awe-mb1{0%,100%{transform:translate(0,0)}33%{transform:translate(64px,38px)}66%{transform:translate(-30px,52px)}}\n  @keyframes awe-mb2{0%,100%{transform:translate(0,0)}33%{transform:translate(-58px,56px)}66%{transform:translate(48px,-26px)}}\n  @keyframes awe-mb3{0%,100%{transform:translate(0,0)}33%{transform:translate(48px,-56px)}66%{transform:translate(-52px,-18px)}}\n  @keyframes awe-mb4{0%,100%{transform:translate(0,0)}33%{transform:translate(-66px,-36px)}66%{transform:translate(40px,44px)}}\n  @keyframes awe-mb5{0%,100%{transform:translate(0,0)}33%{transform:translate(40px,68px)}66%{transform:translate(-44px,28px)}}\n\n  /* Launcher: a compact bar, bottom centre \u2014 reads as a page tool, not a support widget in the corner */\n  #awe-launch{position:fixed;left:50%;bottom:20px;z-index:9000;display:flex;flex-direction:column;align-items:center;gap:8px;transform:translateX(-50%);\n    transition:opacity .3s,transform .45s cubic-bezier(.34,1.56,.64,1)}\n  #awe-launch.off{opacity:0;transform:translate(-50%,16px);pointer-events:none}\n  #awe-launch.tuck{opacity:0;transform:translate(-50%,28px);pointer-events:none}   /* out of the way while the visitor scrolls down to read */\n  /* LED border: a thin light in the brand colours travels round the bar (no glow \u2014 keep it subtle) */\n  @property --awe-ang{syntax:'<angle>';inherits:false;initial-value:0deg}\n  .awe-pill{position:relative;isolation:isolate;display:flex;align-items:center;gap:10px;padding:4px 4px 4px 4px;border-radius:999px;width:420px;max-width:calc(100vw - 32px);\n    --awe-led:conic-gradient(from var(--awe-ang),rgba(90,96,246,.3) 0deg,#FF3F7B 45deg,#F58B0B 80deg,#5A60F6 120deg,#4FCCC2 160deg,rgba(90,96,246,.3) 210deg,rgba(90,96,246,.3) 360deg);\n    border:1.5px solid transparent;background:linear-gradient(#fff,#fff) padding-box,var(--awe-led) border-box;\n    box-shadow:0 22px 50px -24px rgba(51,64,94,.45);animation:awe-led 3.6s linear infinite;transition:width .45s cubic-bezier(.21,.78,.36,1),box-shadow .25s}\n  @keyframes awe-led{to{--awe-ang:360deg}}\n  #awe-launch:focus-within .awe-pill,#awe-launch.wide .awe-pill{width:500px;animation-duration:2.2s}\n  /* LED line on page cards (the sidebar CTA): same travelling light as the bar, drawn as a masked ring so the card keeps its own background */\n  .awe-led-card{position:relative;isolation:isolate}\n  .awe-led-card::before{content:\"\";position:absolute;inset:0;border-radius:inherit;padding:1.5px;pointer-events:none;\n    background:conic-gradient(from var(--awe-ang),rgba(255,255,255,.14) 0deg,#FF3F7B 45deg,#F58B0B 80deg,#5A60F6 120deg,#4FCCC2 160deg,rgba(255,255,255,.14) 210deg,rgba(255,255,255,.14) 360deg);\n    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:awe-led 5s linear infinite}\n  .awe-led-card.light::before{background:conic-gradient(from var(--awe-ang),rgba(90,96,246,.25) 0deg,#FF3F7B 45deg,#F58B0B 80deg,#5A60F6 120deg,#4FCCC2 160deg,rgba(90,96,246,.25) 210deg,rgba(90,96,246,.25) 360deg)}\n  .awe-pill-send{all:unset;cursor:pointer;flex-shrink:0;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#fff;\n    background:linear-gradient(135deg,#FF3F7B 0%,#5A60F6 100%);box-shadow:0 10px 22px -8px rgba(90,96,246,.6);transition:transform .2s,box-shadow .2s}\n  .awe-pill-send svg{width:18px;height:18px}\n  .awe-pill-send:hover{transform:scale(1.08);box-shadow:0 14px 26px -8px rgba(90,96,246,.72)}\n  .awe-pill-send:focus-visible{box-shadow:0 0 0 3px rgba(90,96,246,.45)}\n  .awe-pill input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:500 14.5px 'DM Sans';color:var(--awe-ink);padding:10px 0}\n  .awe-pill input::placeholder{color:var(--awe-mut);transition:opacity .25s}\n  .awe-pill.swap input::placeholder{opacity:0}\n  #awe-launch .awe-chips{margin:0;justify-content:center;max-width:500px;opacity:0;transform:translateY(6px);pointer-events:none;transition:opacity .25s,transform .25s}\n  #awe-launch:focus-within .awe-chips,#awe-launch.wide .awe-chips,#awe-launch .awe-chips.is-pressing{opacity:1;transform:none;pointer-events:auto}\n  #awe-launch .awe-chip{background:rgba(255,255,255,.92);box-shadow:0 8px 20px -12px rgba(51,64,94,.35)}\n\n  /* Unread badge on the closed launcher: a reply arrived while the layer was shut */\n  [data-awe-open]{position:relative}\n  .awe-badge{position:absolute;top:-4px;left:-4px;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:#E6194B;color:#fff;\n    font:700 11px/18px 'DM Sans';text-align:center;box-shadow:0 0 0 2px #fff;transform:scale(0);transition:transform .25s cubic-bezier(.34,1.56,.64,1);pointer-events:none}\n  .awe-badge.on{transform:scale(1)}\n  .awe-badge.bump{animation:awe-bump .45s ease}\n  @keyframes awe-bump{40%{transform:scale(1.3)}}\n  /* Scrim: dims the page while the layer is open so open vs closed reads at a glance */\n  #awe-scrim{position:fixed;inset:0;z-index:8999;background:rgba(16,20,36,.42);opacity:0;pointer-events:none;transition:opacity .3s ease}\n  #awe-scrim.on{opacity:1;pointer-events:auto}\n  #awe-scrim.on.lift{opacity:.25}\n  /* The layer: a panel that works next to the article */\n  #awe-panel{position:fixed;top:88px;right:24px;bottom:24px;width:440px;z-index:9001;display:flex;flex-direction:column;background:#fff;border-radius:22px;\n    border:1px solid var(--awe-line);box-shadow:0 4px 4px rgba(51,64,94,.06),0 16px 32px rgba(51,64,94,.1),0 32px 64px rgba(51,64,94,.1);overflow:hidden;\n    opacity:0;transform:translateX(28px);pointer-events:none;transition:opacity .25s,transform .45s cubic-bezier(.34,1.56,.64,1)}\n  #awe-panel.on{opacity:1;transform:none;pointer-events:auto}\n  /* desktop: the layer opens out of the bar, centred above it */\n  #awe-panel{top:auto;left:50%;right:auto;bottom:20px;width:540px;height:min(680px,calc(100vh - 108px));transform:translate(-50%,28px) scale(.98);transform-origin:50% 100%}\n  #awe-panel.on{transform:translate(-50%,0)}\n  #awe-panel{transition:opacity .25s,transform .45s cubic-bezier(.34,1.56,.64,1),width .35s cubic-bezier(.2,.8,.2,1)}\n  #awe-panel.wide{width:min(720px,calc(100vw - 48px))}\n  .awe-cal{margin:10px -6px 0;border-radius:12px;overflow:hidden;border:1px solid var(--awe-line);background:#fff}\n  .awe-cal{position:relative}\n  .awe-cal::before{content:attr(data-loading);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 13px 'DM Sans';color:var(--awe-mut)}\n  /* shown at 80%: the iframe is laid out 25% larger and scaled down, so Calendly keeps its layout and the card stays small */\n  .awe-cal{height:432px}\n  .awe-cal iframe{position:relative;display:block;width:125%;height:540px;border:0;opacity:0;transition:opacity .3s;transform:scale(.8);transform-origin:0 0}\n  .awe-cal.ready iframe{opacity:1}\n  /* booking: the layer grows to the screen and the calendar fills the visible thread, so it's seen whole with no scroll (sales feedback, 4-nov-2026) */\n  #awe-panel{transition:opacity .25s,transform .45s cubic-bezier(.34,1.56,.64,1),width .35s cubic-bezier(.2,.8,.2,1),height .35s cubic-bezier(.2,.8,.2,1)}\n  #awe-panel.booking{height:calc(100vh - 40px)}\n  /* booking: room to spare, so Calendly at its real size (no .8 shrink) and the day picker fills the layer */\n  #awe-panel.booking .awe-cal iframe{width:100%;transform:none}\n  #awe-panel.booking .awe-thread{scrollbar-width:none}\n  #awe-panel.booking .awe-thread::-webkit-scrollbar{display:none}\n  /* details step: the form runs past the screen, so the thread scrolls and shows its scrollbar again */\n  #awe-panel.booking.caldetails .awe-thread{scrollbar-width:thin}\n  #awe-panel.booking.caldetails .awe-thread::-webkit-scrollbar{display:block}\n  .awe-head{display:flex;align-items:center;gap:12px;padding:14px 14px 12px 16px;border-bottom:1px solid #F7F7F8}\n  .awe-head-t{flex:1;min-width:0}\n  .awe-head-t b{display:block;font:700 15px/1.3 'DM Sans';color:var(--awe-ink)}\n  .awe-status{display:flex;align-items:center;gap:6px;font:500 12px/1.3 'DM Sans';color:var(--awe-mut)}\n  .awe-status::before{content:\"\";width:6px;height:6px;border-radius:50%;background:#52CC57;flex-shrink:0}\n  .awe-status.work::before{background:#F59E0B;animation:awe-pulse 1s ease-in-out infinite}\n  @keyframes awe-pulse{50%{opacity:.3}}\n  .awe-x{all:unset;cursor:pointer;width:32px;height:32px;display:grid;place-items:center;border-radius:10px;color:var(--awe-mut);font-size:15px}\n  .awe-x:hover{background:#F7F7F8}.awe-x:focus-visible{box-shadow:0 0 0 3px rgba(90,96,246,.45)}\n\n  .awe-facts{display:none;padding:10px 16px 12px;border-bottom:1px solid #F7F7F8;background:linear-gradient(180deg,#FAFAFF,#fff)}\n  .awe-facts.on{display:block;animation:awe-in .4s cubic-bezier(0,0,.2,1)}\n  .awe-facts-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;font:700 10.5px/1 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--awe-p7)}\n  .awe-facts-h span{font:400 11px 'DM Sans';letter-spacing:0;text-transform:none;color:#9596A7}\n  .awe-facts-list{display:flex;flex-wrap:wrap;gap:6px}\n  .awe-fact{all:unset;cursor:text;display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:8px;background:#fff;border:1px solid var(--awe-line);font:500 12.5px/1.2 'DM Sans';color:var(--awe-ink);animation:awe-in .35s}\n  .awe-fact i{font-style:normal;color:#9596A7;font-size:11.5px}\n  .awe-fact.guess{border-style:dashed}\n  .awe-fact:hover{border-color:#CFD1FE}\n  .awe-fact input{all:unset;width:110px;font:500 12.5px 'DM Sans';color:var(--awe-ink)}\n\n  .awe-thread{flex:1;overflow-y:auto;padding:16px 18px 8px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}\n  .awe-msg{font:400 14.5px/1.6 'DM Sans';color:var(--awe-text);animation:awe-in .35s cubic-bezier(0,0,.2,1)}\n  /* chat bubbles: the agent's side reads like a conversation, not a document */\n  .awe-msg{align-self:flex-start;max-width:88%;padding:9px 13px;border-radius:16px 16px 16px 4px;background:#F4F5F9;line-height:1.5}\n  .awe-thread .awe-msg + .awe-msg{margin-top:-8px}\n  .awe-typing{align-self:flex-start;display:inline-flex;gap:4px;padding:12px 14px;border-radius:16px 16px 16px 4px;background:#F4F5F9;animation:awe-in .2s}\n  .awe-typing i{width:6px;height:6px;border-radius:50%;background:#9596A7;animation:awe-dot 1s ease-in-out infinite}\n  .awe-typing i:nth-child(2){animation-delay:.15s}.awe-typing i:nth-child(3){animation-delay:.3s}\n  @keyframes awe-dot{0%,60%,100%{opacity:.35;transform:none}30%{opacity:1;transform:translateY(-3px)}}\n  .awe-msg p{margin:0 0 8px}.awe-msg p:last-child{margin:0}\n  .awe-msg ul,.awe-msg ol{margin:4px 0 8px;padding-left:20px}.awe-msg li{margin:2px 0}\n  .awe-msg b,.awe-msg strong{color:var(--awe-ink)}\n  .awe-msg a{color:var(--awe-p);font-weight:700;text-decoration:none;border-bottom:1.5px solid #CFD1FE}\n  .awe-msg a:hover{border-color:var(--awe-p)}\n  .awe-me{align-self:flex-end;max-width:85%;padding:8px 13px;border-radius:16px 16px 4px 16px;background:var(--awe-p);color:#fff;font:500 14px/1.45 'DM Sans';animation:awe-in .25s}\n  @keyframes awe-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}\n  .awe-src{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}\n  .awe-src a,.awe-src button{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:7px;background:#F7F7F8;font:500 11.5px/1.3 'DM Sans';color:var(--awe-mut);border:1px solid transparent}\n  .awe-src a:hover,.awe-src button:hover{border-color:var(--awe-line);color:var(--awe-ink)}\n  .awe-src em{font-style:normal;font:700 9.5px 'DM Mono',monospace;letter-spacing:.06em;color:var(--awe-p7)}\n  .awe-working{display:flex;align-items:center;gap:10px;font:500 13px 'DM Sans';color:var(--awe-mut)}\n  .awe-working span{background:linear-gradient(90deg,#9596A7,#5A60F6,#9596A7);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:awe-sh 1.6s linear infinite}\n  @keyframes awe-sh{to{background-position:-200% 0}}\n\n  .awe-card{border:1px solid var(--awe-line);border-radius:16px;padding:14px 14px 12px;background:#fff;box-shadow:0 2px 8px rgba(51,64,94,.05);animation:awe-in .45s cubic-bezier(0,0,.2,1)}\n  .awe-tag{display:inline-block;font:700 9.5px/1 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;padding:4px 6px;border-radius:5px;background:#EBECFF;color:var(--awe-p7);margin-bottom:8px}\n  .awe-tag.act{background:#DEF6DF;color:#1B6B1F}\n  .awe-big{font:700 30px/1.1 'DM Sans';letter-spacing:-.02em;color:var(--awe-ink)}\n  .awe-big small{font:500 14px 'DM Sans';color:var(--awe-mut);letter-spacing:0}\n  .awe-sub{font:400 13px/1.5 'DM Sans';color:var(--awe-mut);margin-top:4px}\n  .awe-range{width:100%;margin:12px 0 2px;accent-color:#5A60F6}\n  .awe-rangelab{display:flex;justify-content:space-between;font:500 11px 'DM Mono',monospace;color:#9596A7}\n  .awe-why{margin-top:10px;padding:8px 10px;border-radius:10px;background:#FAFAFF;font:400 12.5px/1.5 'DM Sans';color:var(--awe-mut)}\n  .awe-why b{color:var(--awe-p7)}\n  .awe-cta{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--awe-ink);color:#fff;font:700 14.5px 'DM Sans';transition:transform .15s,box-shadow .15s}\n  .awe-cta:hover{transform:translateY(-1px);box-shadow:0 10px 22px -10px rgba(27,33,57,.6)}\n  .awe-cta:focus-visible{box-shadow:0 0 0 3px rgba(90,96,246,.45)}\n  .awe-alt{display:flex;gap:6px;align-items:center;justify-content:center;margin-top:8px;font:400 12.5px 'DM Sans';color:#9596A7}\n  .awe-alt button,.awe-alt a{all:unset;cursor:pointer;color:var(--awe-p7);font-weight:700}\n  .awe-alt button:hover,.awe-alt a:hover{text-decoration:underline}\n  .awe-field{display:flex;gap:8px;margin-top:10px}\n  .awe-field input{flex:1;min-width:0;border:1px solid var(--awe-line);border-radius:10px;padding:11px 12px;font:500 14px 'DM Sans';color:var(--awe-ink);outline:0}\n  /* iOS zooms the page when an input under 16px gets focus: 16px on touch screens */\n  @media (pointer:coarse){.awe-pill input,.awe-compose input,.awe-field input,.awe-fact input{font-size:16px!important}}\n  .awe-field input:focus{border-color:var(--awe-p);box-shadow:0 0 0 3px rgba(90,96,246,.15)}\n  .awe-field input[aria-invalid=true]{border-color:#FF3F7B}\n  .awe-field button{all:unset;cursor:pointer;padding:0 14px;border-radius:10px;background:var(--awe-grad);color:#fff;font:700 13.5px 'DM Sans'}\n  .awe-receipt{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px dashed var(--awe-line);font:400 13px/1.45 'DM Sans';color:var(--awe-text);opacity:0;transform:translateY(4px);transition:opacity .35s,transform .35s}\n  .awe-receipt:first-of-type{border-top:0}\n  .awe-receipt.on{opacity:1;transform:none}\n  .awe-receipt .ok{flex-shrink:0;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:#52CC57;color:#fff;font:700 11px 'DM Sans';margin-top:1px}\n  .awe-receipt small{display:block;font:500 11px 'DM Mono',monospace;color:#9596A7}\n\n  .awe-foot{border-top:1px solid #F7F7F8;padding:10px 12px 8px}\n  .awe-foot .awe-compose{margin:0}\n  .awe-foot p{margin:7px 2px 0;font:400 11px/1.4 'DM Sans';color:#9596A7;text-align:center}\n  .awe-foot .awe-chips{margin:0 0 8px}\n\n  /* pointAt(): the agent lights up the part of the article it is reading */\n  .awe-point{position:relative;border-radius:12px;box-shadow:0 0 0 3px rgba(90,96,246,.35),0 0 0 10px rgba(90,96,246,.08);transition:box-shadow .4s}\n  .awe-point::before{content:attr(data-awe-label);position:absolute;top:-12px;left:12px;z-index:2;padding:3px 8px;border-radius:6px;background:var(--awe-p);color:#fff;font:700 10.5px/1.4 'DM Sans';white-space:nowrap}\n  .awe-morph{transition:opacity .3s}\n  .awe-morph.out{opacity:0}\n\n  @media (max-width:900px){\n    #awe-panel{top:auto;left:0;right:0;bottom:0;width:auto;height:90vh;border-radius:22px 22px 0 0;transform:translateY(40px)}\n    #awe-panel.on{transform:none}\n    #awe-panel.wide{width:auto}\n    #awe-panel.booking{height:calc(100vh - 8px);height:calc(100dvh - 8px)}\n    #awe-launch{left:16px;right:16px;bottom:12px;transform:none;align-items:stretch}\n    #awe-launch.off{transform:translateY(16px)}\n    #awe-launch.tuck{transform:translateY(28px)}\n    .awe-pill,#awe-launch:focus-within .awe-pill,#awe-launch.wide .awe-pill{width:auto;max-width:none}\n    #awe-launch .awe-chips{max-width:none}\n  }\n  @media (prefers-reduced-motion:reduce){.awe-pill,.awe-led-card::before{animation:none}.awe-orb{animation:none}#awe-launch,#awe-panel,#awe-scrim,.awe-badge,.awe-msg,.awe-card{transition:none;animation:none}.awe-lava svg,.awe-lava circle{animation:none!important}}\n  /* What the team will see: the handoff summary under a receipt */\n  .awe-sees{margin-top:10px;border-top:1px dashed var(--awe-line);padding-top:8px;font:400 12.5px/1.55 'DM Sans';color:var(--awe-mut)}\n  .awe-sees summary{cursor:pointer;list-style:none;font:700 10.5px/1.4 'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--awe-p7);margin-bottom:4px}\n  .awe-sees summary::-webkit-details-marker{display:none}\n  .awe-sees div{padding:2px 0;word-break:break-word}\n  /* AI agent template card + live preview inside the chat (10-nov-2026) */\n  .awe-tpl-row{display:flex;gap:12px;align-items:flex-start}\n  .awe-tpl-info{flex:1;min-width:0}\n  .awe-tpl-info .awe-why{margin-top:8px}\n  .awe-tpl-shot{all:unset;box-sizing:border-box;cursor:pointer;position:relative;flex:0 0 96px;width:96px;aspect-ratio:520/1124;border-radius:12px;overflow:hidden;background:#F2F3FA;border:1px solid var(--awe-line);box-shadow:0 8px 18px -12px rgba(27,33,57,.45)}\n  .awe-tpl-shot[hidden]{display:none}\n  .awe-tpl-shot img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center;transition:transform .35s cubic-bezier(0,0,.2,1)}\n  .awe-tpl-shot:hover img{transform:scale(1.04)}\n  .awe-tpl-shot span{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(27,33,57,.82);color:#fff;font:700 13px/1 'DM Sans';box-shadow:0 6px 16px -6px rgba(0,0,0,.5);transition:transform .2s}\n  .awe-tpl-shot:hover span{transform:scale(1.08)}\n  .awe-tpl-shot:focus-visible{box-shadow:0 0 0 3px rgba(90,96,246,.45)}\n  .awe-tpl-t{font:700 15.5px/1.3 'DM Sans';color:var(--awe-ink)}\n  .awe-tpl-info .awe-sub{margin-top:3px}\n  .awe-tpl-f{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}\n  .awe-tpl-f a.awe-chip{text-decoration:none}\n  .awe-tpl-live{position:relative;margin:10px -6px 0;border-radius:12px;overflow:hidden;border:1px solid var(--awe-line);background:#fff;height:520px}\n  .awe-tpl-live::before{content:attr(data-loading);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 13px 'DM Sans';color:var(--awe-mut)}\n  .awe-tpl-live iframe{position:relative;display:block;width:100%;height:100%;border:0;opacity:0;transition:opacity .3s}\n  .awe-tpl-live.ready iframe{opacity:1}\n  @media (prefers-reduced-motion:reduce){.awe-tpl-shot img{transition:none}}\n  /* \"More below \u2193\" pointer (10-nov-2026) */\n  .awe-down{all:unset;box-sizing:border-box;cursor:pointer;position:absolute;left:50%;transform:translateX(-50%);z-index:3;padding:7px 12px;border-radius:999px;background:var(--awe-ink);color:#fff;font:700 12.5px/1 'DM Sans';box-shadow:0 8px 20px -8px rgba(27,33,57,.6);animation:awe-in .3s cubic-bezier(0,0,.2,1)}\n  .awe-down[hidden]{display:none}\n  #awe-panel > .awe-down{position:absolute}\n  .awe-down:focus-visible{box-shadow:0 0 0 3px rgba(90,96,246,.45)}\n  /* template strip under the prompt card (10-nov-2026) */\n  .awe-tplrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}\n  .awe-tplmini{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:0;font:600 12px/1.25 'DM Sans';color:var(--awe-ink)}\n  .awe-tplmini img{display:block;width:100%;aspect-ratio:520/640;object-fit:cover;object-position:top center;border-radius:10px;border:1px solid var(--awe-line);background:#F2F3FA;transition:transform .25s cubic-bezier(0,0,.2,1)}\n  .awe-tplmini:hover img{transform:translateY(-2px)}\n  .awe-tplmini b{font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}\n  .awe-tplmini:focus-visible{outline:2px solid rgba(90,96,246,.6);outline-offset:2px;border-radius:10px}\n  /* phone mockup for templates (10-nov-2026): dark bezel, rounded screen, a small speaker notch */\n  .awe-phone{position:relative;display:block;box-sizing:border-box;aspect-ratio:520/1000;padding:5px;border-radius:18px;background:#0F1222;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 14px 28px -14px rgba(0,0,0,.6);overflow:hidden}\n  .awe-phone::before{content:\"\";position:absolute;top:8px;left:50%;width:30%;height:5px;margin-left:-15%;border-radius:4px;background:#0F1222;z-index:2}\n  .awe-phone img{display:block;width:100%;height:100%;object-fit:cover;object-position:top center;border-radius:13px;background:#fff}\n  a.awe-tpl-shot.awe-phone{flex:0 0 104px;width:104px;border:0;padding:5px;background:#0F1222;text-decoration:none}\n  a.awe-tpl-shot.awe-phone img{border-radius:13px}\n  a.awe-tpl-shot.awe-phone span{width:30px;height:30px;margin:-15px 0 0 -15px;font-size:14px;opacity:0;transition:opacity .2s}\n  a.awe-tpl-shot.awe-phone:hover span,a.awe-tpl-shot.awe-phone:focus-visible span{opacity:1}\n  a.awe-tplmini{text-decoration:none}\n  .awe-tplmini .awe-phone{width:100%;transition:transform .25s cubic-bezier(0,0,.2,1)}\n  .awe-tplmini:hover .awe-phone{transform:translateY(-3px)}\n  .awe-tplmini .awe-phone img{aspect-ratio:auto;border:0}\n  /* blog post card (10-nov-2026) */\n  a.awe-blog{display:flex;gap:12px;align-items:center;text-decoration:none;color:inherit;padding:10px;transition:transform .2s cubic-bezier(0,0,.2,1)}\n  a.awe-blog:hover{transform:translateY(-2px)}\n  .awe-blog img{flex:0 0 132px;width:132px;aspect-ratio:1200/630;object-fit:cover;border-radius:10px;background:#F2F3FA}\n  .awe-blog-b{min-width:0;flex:1}\n  .awe-blog-b .awe-tag{margin-bottom:6px}\n  .awe-blog-t{font:700 14.5px/1.3 'DM Sans';color:var(--awe-ink)}\n  .awe-blog-b .awe-sub{font-size:12.5px;margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}\n  .awe-blog-go{display:inline-block;margin-top:6px;font:700 12.5px 'DM Sans';color:var(--awe-p7)}\n  @media (max-width:420px){a.awe-blog{flex-direction:column;align-items:stretch}.awe-blog img{width:100%;flex-basis:auto}}\n\n/* Home Conversion Agent Master \u00b7 \"glass\" theme for the layer (dark Landbot gradient + frosted bubbles).\n   Loaded after awe-style; every rule is scoped to #awe-panel so the bar on the page keeps its look. */\n#awe-panel{\n  --g-ink:#0F1326; --g-text:rgba(255,255,255,.92); --g-mut:rgba(226,228,255,.66); --g-line:rgba(255,255,255,.16);\n  --g-glass:rgba(255,255,255,.09); --g-glass-hi:rgba(255,255,255,.16);\n  color:var(--g-text); border:1px solid rgba(255,255,255,.14);\n  background:\n    radial-gradient(120% 70% at 0% 0%, rgba(90,96,246,.85) 0%, rgba(90,96,246,0) 55%),\n    radial-gradient(90% 60% at 100% 18%, rgba(79,204,194,.45) 0%, rgba(79,204,194,0) 60%),\n    radial-gradient(80% 55% at 85% 100%, rgba(255,63,123,.38) 0%, rgba(255,63,123,0) 60%),\n    radial-gradient(60% 40% at 10% 92%, rgba(245,139,11,.22) 0%, rgba(245,139,11,0) 60%),\n    linear-gradient(165deg,#24206B 0%,#16193A 48%,#0F1326 100%);\n  box-shadow:0 30px 80px -20px rgba(15,19,38,.65),0 0 0 1px rgba(255,255,255,.04) inset;\n}\n#awe-panel::before{content:\"\";position:absolute;inset:0;pointer-events:none;border-radius:inherit;\n  background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,0) 22%)}\n#awe-panel > *{position:relative}\n#awe-panel p,#awe-panel li,#awe-panel span:not(.awe-badge){color:inherit}   /* the site colours every <p> navy */\n\n/* glass surfaces */\n#awe-panel .awe-msg,#awe-panel .awe-typing,#awe-panel .awe-card,#awe-panel .awe-fact,#awe-panel .awe-chip,#awe-panel .awe-compose,#awe-panel .awe-src a,#awe-panel .awe-src button{\n  -webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%)}\n\n/* head */\n#awe-panel .awe-head{border-bottom:1px solid var(--g-line);background:rgba(255,255,255,.04)}\n#awe-panel .awe-head-t b{color:#fff}\n#awe-panel .awe-status{color:var(--g-mut)}\n#awe-panel .awe-x{color:var(--g-mut)}#awe-panel .awe-x:hover{background:var(--g-glass);color:#fff}\n\n/* what I've understood */\n#awe-panel .awe-facts{background:rgba(255,255,255,.03);border-bottom:1px solid var(--g-line)}\n#awe-panel .awe-facts-h{color:#B9BCFF}#awe-panel .awe-facts-h span{color:var(--g-mut)}\n#awe-panel .awe-fact{background:var(--g-glass);border:1px solid var(--g-line);color:#fff}\n#awe-panel .awe-fact i{color:var(--g-mut)}\n#awe-panel .awe-fact:hover{border-color:rgba(255,255,255,.35)}\n#awe-panel .awe-fact input{color:#fff}\n\n/* conversation */\n#awe-panel .awe-msg{background:var(--g-glass);border:1px solid var(--g-line);color:var(--g-text);\n  box-shadow:0 10px 30px -18px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12)}\n#awe-panel .awe-msg b,#awe-panel .awe-msg strong{color:#fff}\n#awe-panel .awe-msg a{color:#fff;border-bottom-color:rgba(255,255,255,.45)}\n#awe-panel .awe-me{background:linear-gradient(135deg,#E8417F,#5A60F6);border:0;background-clip:padding-box;\n  box-shadow:0 12px 28px -14px rgba(90,96,246,.8),inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22)}\n#awe-panel .awe-src a,#awe-panel .awe-src button{background:rgba(255,255,255,.07);color:var(--g-mut);border:1px solid var(--g-line)}\n#awe-panel .awe-src a:hover,#awe-panel .awe-src button:hover{color:#fff;border-color:rgba(255,255,255,.35)}\n#awe-panel .awe-src em{color:#B9BCFF}\n\n/* thinking: the lava orb, faster, next to the three dots */\n#awe-panel .awe-think{align-self:flex-start;display:flex;align-items:center;gap:8px;animation:awe-in .2s}\n#awe-panel .awe-typing{background:var(--g-glass);border:1px solid var(--g-line);padding:11px 13px;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}\n#awe-panel .awe-typing i{background:rgba(255,255,255,.85)}\n#awe-panel .awe-think-l{font:500 12px 'DM Sans';color:var(--g-mut)}\n#awe-panel .awe-lava.xs{width:32px;height:32px;cursor:default}\n.awe-lava.work svg{animation-duration:3.2s}\n.awe-lava.work .g1{animation-duration:2.1s}.awe-lava.work .g2{animation-duration:2.5s}.awe-lava.work .g3{animation-duration:1.9s}\n.awe-lava.work .g4{animation-duration:2.3s}.awe-lava.work .g5{animation-duration:1.7s}\n#awe-panel .awe-working{display:block}\n#awe-panel .awe-working span{background:none;-webkit-background-clip:border-box;background-clip:border-box;color:inherit;animation:none}\n#awe-panel .awe-working .awe-think-l{background:linear-gradient(90deg,rgba(226,228,255,.55),#fff,rgba(226,228,255,.55));background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:awe-sh 1.6s linear infinite}\n\n/* cards */\n#awe-panel .awe-card{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);\n  box-shadow:0 18px 40px -22px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.16)}\n#awe-panel .awe-card div[style*=\"var(--awe-ink)\"]{color:#fff!important}\n#awe-panel .awe-card b[style]{color:#fff}\n#awe-panel .awe-sub{color:var(--g-mut)}\n#awe-panel .awe-tag{background:rgba(185,188,255,.18);color:#D6D8FF}\n#awe-panel .awe-tag.act{background:rgba(82,204,87,.18);color:#9BEFA0}\n#awe-panel .awe-why{background:rgba(255,255,255,.06);border:1px solid var(--g-line);color:var(--g-mut)}\n#awe-panel .awe-why b{color:#D6D8FF}\n#awe-panel .awe-why a{color:#fff;font-weight:700}\n#awe-panel .awe-cta{background:linear-gradient(135deg,#FF3F7B,#5A60F6);border:0;color:#fff;box-shadow:0 12px 26px -12px rgba(255,63,123,.7),inset 0 1px 0 rgba(255,255,255,.3)}\n#awe-panel .awe-alt{color:var(--g-mut)}#awe-panel .awe-alt button,#awe-panel .awe-alt a{color:#fff}\n#awe-panel .awe-field input{background:rgba(255,255,255,.08);border:1px solid var(--g-line);color:#fff}\n#awe-panel .awe-field input::placeholder{color:var(--g-mut)}\n#awe-panel .awe-receipt{color:var(--g-text);border-top-color:var(--g-line)}\n#awe-panel .awe-receipt small{color:var(--g-mut)}\n#awe-panel .awe-sees,#awe-panel .awe-sees summary{color:var(--g-mut)}\n#awe-panel .awe-cal{border-color:var(--g-line)}\n#awe-panel .awe-chips[data-awe-langs] .awe-chip.on{background:rgba(255,255,255,.9);color:#1B2139;border-color:#fff}\n\n/* footer: chips + compose */\n#awe-panel .awe-foot{border-top:1px solid var(--g-line);background:rgba(255,255,255,.03)}\n#awe-panel .awe-chip{background:var(--g-glass);border:1px solid rgba(255,255,255,.22);color:#fff}\n#awe-panel .awe-chip:hover{background:var(--g-glass-hi);border-color:rgba(255,255,255,.4)}\n#awe-panel .awe-compose{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:5px 5px 5px 18px;\n  box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}\n#awe-panel .awe-compose:focus-within{border-color:rgba(255,255,255,.45);box-shadow:0 0 0 3px rgba(90,96,246,.35)}\n#awe-panel .awe-compose input{color:#fff}\n#awe-panel .awe-compose input::placeholder{color:var(--g-mut)}\n#awe-panel .awe-send{border-radius:50%;background:#fff;color:#1B2139}\n#awe-panel .awe-foot p{color:rgba(226,228,255,.5)}\n\n/* scrollbar */\n#awe-panel .awe-thread{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.25) transparent}\n#awe-panel .awe-thread::-webkit-scrollbar{width:6px}#awe-panel .awe-thread::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:6px}\n\n@media (prefers-reduced-motion: reduce){.awe-lava.work svg,.awe-lava.work circle{animation:none}}\n\n/* ---------- cards the agent writes: sketch of their agent, prompt for a coding agent ---------- */\n#awe-panel .awe-steps{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:8px}\n#awe-panel .awe-steps li{display:flex;gap:10px;align-items:flex-start;font:500 14px/1.45 'DM Sans';color:var(--g-text)}\n#awe-panel .awe-steps li span{flex-shrink:0;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:700 11px 'DM Sans';color:#fff;\n  background:linear-gradient(135deg,#FF3F7B,#5A60F6);box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}\n#awe-panel .awe-code{margin:4px 0 0;padding:12px 14px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;border-radius:12px;\n  background:rgba(8,10,24,.55);border:1px solid var(--g-line);font:500 12.5px/1.55 'DM Mono',ui-monospace,monospace;color:#E6E7FF}\n#awe-panel .awe-prompt-f{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px}\n#awe-panel .awe-prompt-f .awe-sub{margin:0;font-size:12px}\n#awe-panel .awe-prompt-f .awe-chip{flex-shrink:0}\n#awe-panel .awe-theme{font-size:15px}\n\n/* ---------- light theme: same glass, pale Landbot gradient (follows the system; \u2600\ufe0e/\u263e in the head) ---------- */\n#awe-panel.light{\n  --g-text:#2B2F4A; --g-mut:#5D6079; --g-line:rgba(27,33,57,.09); --g-glass:rgba(255,255,255,.62); --g-glass-hi:rgba(255,255,255,.85);\n  color:var(--g-text); border:1px solid rgba(255,255,255,.9);\n  background:\n    radial-gradient(120% 70% at 0% 0%, rgba(90,96,246,.22) 0%, rgba(90,96,246,0) 55%),\n    radial-gradient(90% 60% at 100% 15%, rgba(79,204,194,.20) 0%, rgba(79,204,194,0) 60%),\n    radial-gradient(80% 55% at 85% 100%, rgba(255,63,123,.16) 0%, rgba(255,63,123,0) 60%),\n    radial-gradient(60% 40% at 8% 95%, rgba(245,139,11,.12) 0%, rgba(245,139,11,0) 60%),\n    linear-gradient(170deg,#F6F6FF 0%,#FBFBFF 55%,#FFFFFF 100%);\n  box-shadow:0 30px 80px -24px rgba(51,64,94,.35),0 0 0 1px rgba(255,255,255,.6) inset}\n#awe-panel.light::before{background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,0) 25%)}\n#awe-panel.light .awe-head,#awe-panel.light .awe-facts,#awe-panel.light .awe-foot{background:rgba(255,255,255,.35)}\n#awe-panel.light .awe-head-t b,#awe-panel.light .awe-fact,#awe-panel.light .awe-fact input,#awe-panel.light .awe-msg b,#awe-panel.light .awe-msg strong{color:#1B2139}\n#awe-panel.light .awe-x{color:var(--g-mut)}#awe-panel.light .awe-x:hover{background:rgba(27,33,57,.06);color:#1B2139}\n#awe-panel.light .awe-facts-h{color:#4047C4}\n#awe-panel.light .awe-msg{box-shadow:0 10px 26px -18px rgba(51,64,94,.35),inset 0 1px 0 rgba(255,255,255,.9)}\n#awe-panel.light .awe-msg a{color:#4047C4;border-bottom-color:#CFD1FE}\n#awe-panel.light .awe-src a,#awe-panel.light .awe-src button{background:rgba(255,255,255,.7)}\n#awe-panel.light .awe-src em,#awe-panel.light .awe-why b,#awe-panel.light .awe-tag{color:#4047C4}\n#awe-panel.light .awe-tag{background:rgba(90,96,246,.12)}\n#awe-panel.light .awe-tag.act{background:rgba(82,204,87,.16);color:#1B6B1F}\n#awe-panel.light .awe-typing i{background:#9596A7}\n#awe-panel.light .awe-card{background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.95);box-shadow:0 16px 36px -22px rgba(51,64,94,.4),inset 0 1px 0 #fff}\n#awe-panel.light .awe-card div[style*=\"var(--awe-ink)\"],#awe-panel.light .awe-card b[style]{color:#1B2139!important}\n#awe-panel.light .awe-why{background:rgba(255,255,255,.6)}\n#awe-panel.light .awe-why a,#awe-panel.light .awe-alt button,#awe-panel.light .awe-alt a{color:#4047C4}\n#awe-panel.light .awe-field input{background:rgba(255,255,255,.8);color:#1B2139}\n#awe-panel.light .awe-chip{background:rgba(255,255,255,.7);border:1px solid rgba(90,96,246,.25);color:#4047C4}\n#awe-panel.light .awe-chip:hover{background:#fff;border-color:#5A60F6}\n#awe-panel.light .awe-chips[data-awe-langs] .awe-chip.on{background:#1B2139;color:#fff;border-color:#1B2139}\n#awe-panel.light .awe-compose{background:rgba(255,255,255,.75);border:1px solid rgba(27,33,57,.1)}\n#awe-panel.light .awe-compose input{color:#1B2139}\n#awe-panel.light .awe-send{background:linear-gradient(135deg,#FF3F7B,#5A60F6);color:#fff}\n#awe-panel.light .awe-foot p{color:#9596A7}\n#awe-panel.light .awe-steps li{color:#2B2F4A}\n#awe-panel.light .awe-code{background:#1B2139;color:#E6E7FF;border-color:transparent}\n#awe-panel.light .awe-working .awe-think-l{background-image:linear-gradient(90deg,#9596A7,#5A60F6,#9596A7)}\n#awe-panel.light .awe-thread{scrollbar-color:rgba(27,33,57,.2) transparent}\n\n#awe-panel .awe-alt{flex-wrap:wrap;row-gap:4px}\n\n/* template card (10-nov-2026) */\n#awe-panel .awe-tpl-t{color:#fff}\n#awe-panel .awe-tpl-shot{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16)}\n#awe-panel .awe-tpl-live{border:1px solid rgba(255,255,255,.18)}\n#awe-panel.light .awe-tpl-t{color:var(--awe-ink)}\n#awe-panel.light .awe-tpl-shot{background:#F2F3FA;border:1px solid rgba(51,64,94,.12)}\n#awe-panel > .awe-down{position:absolute}\n#awe-panel .awe-down{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}\n#awe-panel.light .awe-down{background:var(--awe-ink);border:0;color:#fff}\n#awe-panel .awe-tplmini{color:#fff}\n#awe-panel .awe-tplmini img{border:1px solid rgba(255,255,255,.18)}\n#awe-panel.light .awe-tplmini{color:var(--awe-ink)}\n#awe-panel .awe-blog-t{color:#fff}\n#awe-panel .awe-blog-go{color:#B9BCFF}\n#awe-panel.light .awe-blog-t{color:var(--awe-ink)}\n#awe-panel.light .awe-blog-go{color:#4047C4}\n\n/* Theme \"land\" for the /lp/chatbot-creator-x Conversion Agent (24-nov-2026).\n   The LP's brandbook \"El N\u00facleo vivo\": ink #0B0D10, light #E9EBEF, greys, pink #ED4078 only for activity and the primary action,\n   green #5BC88E only for what is resolved; Archivo + IBM Plex Mono. The agent is Land, with the LP's glyph.\n   Position as the other agents: bar at the bottom centre, the layer opens above it (Fabo, 24-nov: more modern than the right side). Phones: bottom bar + sheet. */\nhtml.awe-land {\n  --l-ink: #0B0D10; --l-ink2: #14171C; --l-line: #272C35; --l-line2: #33405E;\n  --l-txt: #E9EBEF; --l-mut: #8A919E; --l-mut2: #B7BCC6; --l-pink: #ED4078; --l-green: #5BC88E;\n}\n\n/* ---------- Land's glyph ---------- */\nhtml.awe-land .awe-glyph { display: inline-grid; place-items: center; background: none !important; box-shadow: none !important; }\nhtml.awe-land .awe-glyph svg { width: 100%; height: 100%; overflow: visible; animation: none !important; filter: none !important; }\nhtml.awe-land .awe-glyph .g-ring { fill: none; stroke: var(--l-txt); stroke-width: 8; }\nhtml.awe-land .awe-glyph .g-core { fill: var(--l-pink); }\nhtml.awe-land .awe-glyph .g-arc { fill: none; stroke: var(--l-pink); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 45 400; opacity: 0; transform-origin: 50px 50px; transition: opacity .3s; }\nhtml.awe-land .awe-glyph .g-p { fill: none; stroke: var(--l-pink); stroke-width: 1.6; opacity: 0; transform-origin: 50px 50px; }\nhtml.awe-land .awe-glyph.work .g-arc { opacity: 1; animation: lb-spin 1.5s linear infinite; }\nhtml.awe-land .awe-glyph.work .g-p0 { animation: lb-pulse 1.8s ease-out infinite; }\nhtml.awe-land .awe-glyph.work .g-p1 { animation: lb-pulse 1.8s ease-out .9s infinite; }\n@keyframes lb-breath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } 92% { transform: scale(.97); } }\n@keyframes lb-spin { to { transform: rotate(360deg); } }\n@keyframes lb-pulse { 0% { opacity: .55; transform: scale(.4); } 100% { opacity: 0; transform: scale(1.5); } }\n@media (prefers-reduced-motion: reduce) { html.awe-land .awe-glyph * { animation: none !important; } }\n\n/* ---------- launcher ---------- */\nhtml.awe-land #awe-launch .awe-pill {\n  background: var(--l-ink) !important; border: 1px solid var(--l-line2) !important; border-radius: 999px;\n  box-shadow: 0 18px 40px -18px rgba(0,0,0,.8) !important; color: var(--l-txt);\n}\nhtml.awe-land #awe-launch .awe-pill::before, html.awe-land #awe-launch .awe-pill::after { display: none !important; }   /* no LED line */\nhtml.awe-land #awe-launch .awe-pill input { font: 400 14px/1.3 Archivo, sans-serif !important; color: var(--l-txt) !important; }\nhtml.awe-land #awe-launch .awe-pill input::placeholder { color: var(--l-mut2); }\nhtml.awe-land #awe-launch .awe-pill .awe-glyph { width: 36px !important; height: 36px !important; margin: 0 6px 0 4px; }\nhtml.awe-land .awe-pill-send, html.awe-land .awe-send { background: var(--l-pink) !important; color: #fff !important; box-shadow: none !important; }\nhtml.awe-land #awe-launch .awe-chip {\n  background: var(--l-ink) !important; color: var(--l-mut2) !important; border: 1px solid var(--l-line2) !important;\n  box-shadow: none !important; font: 500 13px/1 Archivo, sans-serif !important;\n}\nhtml.awe-land #awe-launch .awe-chip:hover { color: var(--l-txt) !important; border-color: var(--l-txt) !important; }\n\n/* ---------- the layer ---------- */\nhtml.awe-land #awe-scrim { background: rgba(5,6,8,.55); }\nhtml.awe-land #awe-panel, html.awe-land #awe-panel.light {\n  background: var(--l-ink) !important; color: var(--l-txt) !important; border: 1px solid var(--l-line);\n  box-shadow: -30px 0 80px -30px rgba(0,0,0,.9) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important;\n  font-family: Archivo, sans-serif !important;\n}\nhtml.awe-land #awe-panel::before, html.awe-land #awe-panel::after { display: none !important; }\nhtml.awe-land #awe-panel .awe-head, html.awe-land #awe-panel .awe-foot, html.awe-land #awe-panel .awe-facts { background: var(--l-ink) !important; border-color: var(--l-line) !important; }\nhtml.awe-land #awe-panel .awe-head { border-bottom: 1px solid var(--l-line) !important; }\nhtml.awe-land #awe-panel .awe-foot { border-top: 1px solid var(--l-line) !important; }\nhtml.awe-land #awe-panel .awe-head .awe-glyph { width: 34px !important; height: 34px !important; }\nhtml.awe-land #awe-panel .awe-head-t b { font: 600 16px/1.1 Archivo, sans-serif !important; color: var(--l-txt) !important; letter-spacing: -.01em; }\nhtml.awe-land #awe-panel .awe-status { font: 500 10.5px/1 'IBM Plex Mono', monospace !important; letter-spacing: .08em; text-transform: uppercase; color: var(--l-mut) !important; }\nhtml.awe-land #awe-panel .awe-status::before { background: var(--l-green) !important; box-shadow: none !important; }\nhtml.awe-land #awe-panel .awe-x { color: var(--l-mut) !important; }\nhtml.awe-land #awe-panel .awe-x:hover { color: var(--l-txt) !important; background: var(--l-ink2) !important; }\nhtml.awe-land #awe-panel .awe-theme { display: none !important; }\n\n/* messages: Land speaks without a bubble, a thin line on the left; the visitor in a grey bubble */\nhtml.awe-land #awe-panel .awe-msg {\n  background: none !important; border: 0 !important; border-left: 2px solid var(--l-line2) !important; border-radius: 0 !important;\n  box-shadow: none !important; color: var(--l-txt) !important; padding: 2px 0 2px 14px !important; font: 400 14.5px/1.55 Archivo, sans-serif !important;\n}\nhtml.awe-land #awe-panel .awe-msg p, html.awe-land #awe-panel .awe-msg li, html.awe-land #awe-panel .awe-msg span { color: inherit !important; }\nhtml.awe-land #awe-panel .awe-msg b, html.awe-land #awe-panel .awe-msg strong { color: #fff !important; font-weight: 600; }\nhtml.awe-land #awe-panel .awe-msg a { color: var(--l-txt) !important; border-bottom: 1px solid var(--l-pink) !important; text-decoration: none; }\nhtml.awe-land #awe-panel .awe-me {\n  background: var(--l-line) !important; color: var(--l-txt) !important; border: 0 !important; box-shadow: none !important;\n  border-radius: 14px 14px 4px 14px !important; font: 400 14.5px/1.45 Archivo, sans-serif !important;\n}\nhtml.awe-land #awe-panel .awe-typing i { background: var(--l-mut) !important; }\nhtml.awe-land #awe-panel .awe-sub { color: var(--l-mut2) !important; font-family: Archivo, sans-serif !important; }\nhtml.awe-land #awe-panel .awe-src, html.awe-land #awe-panel .awe-think-l { color: var(--l-mut) !important; font-family: 'IBM Plex Mono', monospace !important; font-size: 11px !important; letter-spacing: .04em; }\n\n/* chips: outline pills like the LP's tabs */\nhtml.awe-land #awe-panel .awe-chip {\n  background: transparent !important; color: var(--l-mut2) !important; border: 1px solid var(--l-line2) !important;\n  box-shadow: none !important; font: 500 13px/1 Archivo, sans-serif !important;\n}\nhtml.awe-land #awe-panel .awe-chip:hover { color: var(--l-txt) !important; border-color: var(--l-txt) !important; }\nhtml.awe-land #awe-panel .awe-chip[data-awe-say^=\"Book my expert\"], html.awe-land #awe-panel .awe-chip[data-awe-say^=\"Reservar mi sesi\u00f3n\"], html.awe-land #awe-panel .awe-chip[data-awe-say^=\"Agendar minha sess\u00e3o\"] { background: var(--l-pink) !important; color: #fff !important; border-color: var(--l-pink) !important; }   /* the expert session: the one primary action */\n\n/* cards, CTAs, receipts */\nhtml.awe-land #awe-panel .awe-card, html.awe-land #awe-panel .awe-tplstrip, html.awe-land #awe-panel .awe-blog {\n  background: var(--l-ink2) !important; border: 1px solid var(--l-line) !important; border-radius: 14px !important; box-shadow: none !important; color: var(--l-txt) !important;\n}\nhtml.awe-land #awe-panel .awe-card h3, html.awe-land #awe-panel .awe-card b, html.awe-land #awe-panel .awe-card strong { color: var(--l-txt) !important; }\nhtml.awe-land #awe-panel .awe-tag { color: var(--l-mut) !important; font-family: 'IBM Plex Mono', monospace !important; }\nhtml.awe-land #awe-panel .awe-cta, html.awe-land #awe-panel .awe-card button.awe-cta, html.awe-land #awe-panel .awe-card a.awe-cta {\n  background: var(--l-pink) !important; color: #fff !important; border: 0 !important; border-radius: 999px !important; box-shadow: none !important;\n}\nhtml.awe-land #awe-panel .awe-alt { background: transparent !important; color: var(--l-txt) !important; border: 1px solid var(--l-line2) !important; }\nhtml.awe-land #awe-panel .awe-receipt { color: var(--l-green) !important; }\nhtml.awe-land #awe-panel .awe-down { background: var(--l-ink2) !important; color: var(--l-txt) !important; border: 1px solid var(--l-line2) !important; }\n\n/* compose */\nhtml.awe-land #awe-panel .awe-compose { background: var(--l-ink2) !important; border: 1px solid var(--l-line2) !important; box-shadow: none !important; border-radius: 999px !important; }\nhtml.awe-land #awe-panel .awe-compose input { color: var(--l-txt) !important; font: 400 14.5px Archivo, sans-serif !important; }\nhtml.awe-land #awe-panel .awe-compose input::placeholder { color: var(--l-mut); }\nhtml.awe-land #awe-panel .awe-compose:focus-within { border-color: var(--l-mut2) !important; }\n\n/* the calendar while it loads: dark, not white */\nhtml.awe-land #awe-panel .awe-cal, html.awe-land #awe-panel .awe-cal iframe { background: var(--l-ink2) !important; border-color: var(--l-line) !important; }\nhtml.awe-land #awe-panel .awe-cal * { color: var(--l-mut2); }\n\n/* ---------- alive: a soft pink glow under the core, breathing; stronger while working ---------- */\nhtml.awe-land .awe-glyph { position: relative; }\nhtml.awe-land .awe-glyph::before { content: \"\"; position: absolute; inset: 18%; border-radius: 50%; background: radial-gradient(circle, rgba(237,64,120,.55), rgba(237,64,120,0) 70%); filter: blur(4px); animation: lb-glow 3.6s ease-in-out infinite; pointer-events: none; }\nhtml.awe-land .awe-glyph.work::before { animation-duration: 1.2s; }\n@keyframes lb-glow { 0%, 100% { opacity: .35; transform: scale(.9); } 50% { opacity: .8; transform: scale(1.25); } }\n@media (prefers-reduced-motion: reduce) { html.awe-land .awe-glyph::before { animation: none; opacity: .4; } }\n\n/* ---------- contrast: over a dark section the bar turns light (the page is black: a black bar got lost) ---------- */\nhtml.awe-land #awe-launch .awe-pill { transition: background .35s, border-color .35s, color .35s; }\nhtml.awe-land #awe-launch.bar-light .awe-pill { background: #F4F5F7 !important; border-color: #F4F5F7 !important; box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -14px rgba(237,64,120,.45) !important; }\nhtml.awe-land #awe-launch.bar-light .awe-pill input { color: var(--l-ink) !important; }\nhtml.awe-land #awe-launch.bar-light .awe-pill input::placeholder { color: #33405E; }\nhtml.awe-land #awe-launch.bar-light .awe-glyph .g-ring { stroke: var(--l-ink); }\nhtml.awe-land #awe-launch.bar-light .awe-chip { background: #F4F5F7 !important; color: var(--l-ink) !important; border-color: #F4F5F7 !important; }\nhtml.awe-land #awe-launch.bar-light .awe-chip:hover { border-color: var(--l-pink) !important; }\n\n/* ---------- the layer stands off the black page: a lifted surface, a lighter edge and a thin pink line on top ---------- */\nhtml.awe-land #awe-panel, html.awe-land #awe-panel.light { background: #121519 !important; border: 1px solid var(--l-line2) !important; box-shadow: 0 0 0 1px rgba(255,255,255,.04), 0 40px 120px -30px rgba(0,0,0,.95), 0 0 80px -40px rgba(237,64,120,.35) !important; }\nhtml.awe-land #awe-panel .awe-head, html.awe-land #awe-panel .awe-foot { background: #121519 !important; }\nhtml.awe-land #awe-panel .awe-head { box-shadow: inset 0 2px 0 var(--l-pink); }\nhtml.awe-land #awe-panel .awe-card, html.awe-land #awe-panel .awe-tplstrip, html.awe-land #awe-panel .awe-blog, html.awe-land #awe-panel .awe-compose { background: #1A1E25 !important; }\nhtml.awe-land #awe-scrim { background: rgba(5,6,8,.7); }\n\n/* ---------- LED line round the bar (like the glass agents), in the LP's colours: pink head, a light glint, a green tail ----------\n   Uses the shared --awe-ang / @keyframes awe-led from awe-style. The bar's fill is the padding-box layer, the LED the border-box one. */\nhtml.awe-land #awe-launch .awe-pill {\n  --l-led: conic-gradient(from var(--awe-ang), rgba(51,64,94,.55) 0deg, #ED4078 40deg, #F4F5F7 68deg, #5BC88E 96deg, rgba(51,64,94,.55) 150deg, rgba(51,64,94,.55) 360deg);\n  border: 2px solid transparent !important;\n  background: linear-gradient(var(--l-ink), var(--l-ink)) padding-box, var(--l-led) border-box !important;\n  animation: awe-led 3.6s linear infinite !important;\n}\nhtml.awe-land #awe-launch.bar-light .awe-pill {\n  --l-led: conic-gradient(from var(--awe-ang), rgba(11,13,16,.14) 0deg, #ED4078 40deg, #33405E 68deg, #5BC88E 96deg, rgba(11,13,16,.14) 150deg, rgba(11,13,16,.14) 360deg);\n  border-color: transparent !important;\n  background: linear-gradient(#F4F5F7, #F4F5F7) padding-box, var(--l-led) border-box !important;\n}\nhtml.awe-land #awe-launch:focus-within .awe-pill { animation-duration: 2.2s !important; }\n@media (prefers-reduced-motion: reduce) { html.awe-land #awe-launch .awe-pill { animation: none !important; } }\n\n/* iOS zooms the page when an input under 16px gets focus (shared fix 25-nov): the Land fonts above are more specific, so repeat it here */\n@media (pointer: coarse) { html.awe-land #awe-launch .awe-pill input, html.awe-land #awe-panel .awe-compose input, html.awe-land #awe-panel .awe-field input { font-size: 16px !important; } }\n"; document.head.appendChild(s); })();
+
+/* ---------------------------------------------------------------------------
+   Agentic Web Experience · lb-awe: LP CHATBOT-CREATOR-X (Slim Conversion Agent)
+   Front of the landbot-conversion-agent skill, adapted to landbot.io/lp/chatbot-creator-x (EN, ?lang=es, ?lang=pt).
+   Back: bot "LP Chatbot Creator X Conversion Agent 11-24" in the Landbot Sales brand 51550 (e7e11f8b…, channel 3564646,
+   AI agent d8bcbb90…, a copy of the home agent with its knowledge) run headless via Landbot.Core.
+   Goal and pain chips are answered by the page (Slim); the LP's exit pop-up stays and steps aside for the chat.
+   Country: time zone (mockup) → window.LB_COUNTRY (Cloudflare header, production) wins.
+--------------------------------------------------------------------------- */
+try {
+if (window.__aweLpCcx) throw new Error('already loaded'); window.__aweLpCcx = 1;
+/* the LP does not load DM Sans (the layer's typeface): add it once */
+if (![...document.querySelectorAll('link[href*="fonts.googleapis.com/css2"]')].some((l) => /DM\+Sans/.test(l.href))) {
+  const fl = document.createElement('link'); fl.rel = 'stylesheet'; fl.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..700&family=DM+Mono:wght@500&display=swap'; document.head.appendChild(fl);
+}
+const CONFIG_URL = 'https://storage.googleapis.com/landbot.pro/v3/H-3564646-JAJKNBJ5E4HTJEOG/index.json';
+const SDK_URL = 'https://cdn.landbot.io/landbot-3/landbot-3.0.0.mjs';
+/* Sales Entry Points convention (Notion · Growth & Marketing › Site › Conversión on-site) */
+const ENTRY = { source: 'web', demo: 'web-lp-chatbot-creator-x-v2-sticky-demo', signup: 'web-lp-chatbot-creator-x-v2-sticky-signup' };   // the new LP lives at /lp/chatbot-creator-x-v2 (A/B variant, 26-nov)
+const SIGNUP = 'https://app.landbot.io/signup/?utm_medium=conversion_agent&utm_campaign=lp_chatbot_creator_x&utm_content=web-lp-chatbot-creator-x-v2-sticky-signup';
+const BOOK_URL = 'https://calendly.com/landbot-sales/meeting-landbot-expert', HELP_URL = 'https://help.landbot.io/';
+
+/* ---------- country and fit level (landbot-icp tiers, 14-sep-2026) ---------- */
+const TIER_A = 'GB NL US ES MX IT SG ZA PL BR DE FR CO CL'.split(' ');
+/* Tier C = paid exclusion list. IE and SE are treated as B here until the Tier C review (decision 2-oct-2026, reminder 15-mar-2027). */
+const TIER_C = ('AF DZ AO BD BJ BO BW BN BF KH CM CR CY CZ DO EC EG SV EE SZ GH HN HK HU IN ID IQ JM JP JO KZ KE KW LV LB LR MG MW ML MQ MR MU MD MA MZ MM NP NG OM PK PS PA PY PE PH PR RO RU RW SN SK SO LK TW TZ TH TN TR UG UA UY UZ VE VN YE ZW').split(' ');
+const TZ = Object.fromEntries(('Europe/London:GB Europe/Belfast:GB Europe/Dublin:IE Europe/Amsterdam:NL Europe/Madrid:ES Atlantic/Canary:ES Africa/Ceuta:ES Europe/Lisbon:PT Atlantic/Madeira:PT Atlantic/Azores:PT ' +
+  'Europe/Paris:FR Europe/Berlin:DE Europe/Busingen:DE Europe/Rome:IT Europe/Warsaw:PL Europe/Brussels:BE Europe/Luxembourg:LU Europe/Zurich:CH Europe/Vienna:AT Europe/Prague:CZ Europe/Bratislava:SK ' +
+  'Europe/Budapest:HU Europe/Bucharest:RO Europe/Sofia:BG Europe/Athens:GR Europe/Istanbul:TR Europe/Kiev:UA Europe/Kyiv:UA Europe/Moscow:RU Europe/Helsinki:FI Europe/Stockholm:SE Europe/Oslo:NO ' +
+  'Europe/Copenhagen:DK Europe/Tallinn:EE Europe/Riga:LV Europe/Vilnius:LT Europe/Zagreb:HR Europe/Belgrade:RS Europe/Ljubljana:SI Europe/Malta:MT Asia/Nicosia:CY Europe/Chisinau:MD Europe/Minsk:BY ' +
+  'America/New_York:US America/Chicago:US America/Denver:US America/Phoenix:US America/Los_Angeles:US America/Anchorage:US Pacific/Honolulu:US America/Detroit:US America/Boise:US ' +
+  'America/Indiana/Indianapolis:US America/Kentucky/Louisville:US America/Toronto:CA America/Vancouver:CA America/Edmonton:CA America/Winnipeg:CA America/Halifax:CA America/St_Johns:CA ' +
+  'America/Mexico_City:MX America/Monterrey:MX America/Tijuana:MX America/Cancun:MX America/Merida:MX America/Chihuahua:MX America/Hermosillo:MX America/Mazatlan:MX ' +
+  'America/Bogota:CO America/Santiago:CL America/Punta_Arenas:CL America/Lima:PE America/Guayaquil:EC America/La_Paz:BO America/Caracas:VE America/Asuncion:PY America/Montevideo:UY ' +
+  'America/Argentina/Buenos_Aires:AR America/Argentina/Cordoba:AR America/Buenos_Aires:AR America/Sao_Paulo:BR America/Fortaleza:BR America/Recife:BR America/Bahia:BR America/Manaus:BR ' +
+  'America/Belem:BR America/Cuiaba:BR America/Campo_Grande:BR America/Porto_Velho:BR America/Rio_Branco:BR America/Maceio:BR America/Araguaina:BR America/Noronha:BR ' +
+  'America/Panama:PA America/Costa_Rica:CR America/Guatemala:GT America/El_Salvador:SV America/Tegucigalpa:HN America/Managua:NI America/Santo_Domingo:DO America/Puerto_Rico:PR America/Havana:CU America/Jamaica:JM ' +
+  'Asia/Singapore:SG Asia/Kolkata:IN Asia/Calcutta:IN Asia/Dhaka:BD Asia/Karachi:PK Asia/Kathmandu:NP Asia/Colombo:LK Asia/Jakarta:ID Asia/Manila:PH Asia/Bangkok:TH Asia/Ho_Chi_Minh:VN Asia/Saigon:VN ' +
+  'Asia/Kuala_Lumpur:MY Asia/Hong_Kong:HK Asia/Taipei:TW Asia/Shanghai:CN Asia/Tokyo:JP Asia/Seoul:KR Asia/Dubai:AE Asia/Riyadh:SA Asia/Qatar:QA Asia/Kuwait:KW Asia/Muscat:OM Asia/Amman:JO ' +
+  'Asia/Beirut:LB Asia/Jerusalem:IL Asia/Tel_Aviv:IL Asia/Baghdad:IQ Asia/Tehran:IR Asia/Almaty:KZ Asia/Tashkent:UZ Asia/Yangon:MM Asia/Phnom_Penh:KH Asia/Gaza:PS Asia/Hebron:PS ' +
+  'Australia/Sydney:AU Australia/Melbourne:AU Australia/Brisbane:AU Australia/Perth:AU Australia/Adelaide:AU Pacific/Auckland:NZ ' +
+  'Africa/Johannesburg:ZA Africa/Lagos:NG Africa/Cairo:EG Africa/Casablanca:MA Africa/Algiers:DZ Africa/Tunis:TN Africa/Nairobi:KE Africa/Accra:GH Africa/Kampala:UG Africa/Dar_es_Salaam:TZ ' +
+  'Africa/Kigali:RW Africa/Dakar:SN Africa/Luanda:AO Africa/Maputo:MZ Africa/Harare:ZW Africa/Lusaka:ZM Africa/Abidjan:CI Africa/Douala:CM Indian/Mauritius:MU').split(' ').map((p) => p.split(':')));
+function geoOf(cc) { return !cc ? '' : TIER_A.includes(cc) ? 'A' : TIER_C.includes(cc) ? 'C' : 'B'; }
+const GEO = (() => {
+  let cc = String(window.LB_COUNTRY || new URLSearchParams(location.search).get('country') || '').toUpperCase();
+  let how = cc ? 'IP (Cloudflare)' : '';
+  if (!cc) { try { cc = TZ[Intl.DateTimeFormat().resolvedOptions().timeZone] || ''; how = cc ? 'time zone' : ''; } catch (_) {} }
+  return { cc, how, tier: geoOf(cc) };
+})();
+const countryName = (cc, lang) => { try { return new Intl.DisplayNames([lang === 'pt' ? 'pt-BR' : lang], { type: 'region' }).of(cc); } catch (_) { return cc; } };
+const EUR = !GEO.cc || /^(AT|BE|BG|HR|CY|CZ|DK|EE|FI|FR|DE|GR|HU|IE|IT|LV|LT|LU|MT|NL|PL|PT|RO|SK|SI|ES|SE|CH|NO|IS|GB)$/.test(GEO.cc);
+
+/* utm_source is the REAL traffic source (from the journey), never a location */
+function realSource() { try { const d = window.lbJourney && window.lbJourney.describe && window.lbJourney.describe(); return d && d.from && d.from !== 'direct' ? d.from : ''; } catch (_) { return ''; } }
+function tagUrl(href) {
+  try {
+    const u = new URL(href);
+    if (/(^|\.)landbot\.io$/.test(u.hostname) && /sign-?up/.test(u.pathname)) { if (!u.searchParams.get('utm_content')) u.searchParams.set('utm_content', ENTRY.signup); }
+    else return href;
+    const src = realSource(); if (src && !u.searchParams.get('utm_source')) u.searchParams.set('utm_source', src);
+    return u.toString();
+  } catch (_) { return href; }
+}
+const sent = {};
+function emit(name, id, extra) {
+  const key = name + ':' + id; if (sent[key]) return; sent[key] = 1;
+  const p = Object.assign({ entry_point_id: id, entry_point_type: 'sticky / flotante', page_path: location.pathname, country_tier: GEO.tier || 'unknown' }, extra || {});
+  try { (window.dataLayer = window.dataLayer || []).push(Object.assign({ event: name }, p)); } catch (_) {}
+  try { if (typeof window.gtag === 'function') window.gtag('event', name, p); } catch (_) {}
+}
+
+/* ---------- sections of /lp/chatbot-creator-x ---------- */
+const SECTIONS = [
+  ['hero', '.lbh-hero', { en: 'Landbot', es: 'Landbot', pt: 'Landbot' }], ['watch', '#watch', { en: 'Watch it win', es: 'Míralo en acción', pt: 'Veja em ação' }],
+  ['imagine', '#imagine', { en: 'Templates', es: 'Plantillas', pt: 'Modelos' }], ['bwai', '#bwai', { en: 'Build with AI', es: 'Crear con IA', pt: 'Criar com IA' }],
+  ['motion', '#motion', { en: 'How it works', es: 'Cómo funciona', pt: 'Como funciona' }], ['engine', '#engine', { en: 'What converts', es: 'Qué convierte', pt: 'O que converte' }],
+  ['results', '#results', { en: 'Customer results', es: 'Resultados de clientes', pt: 'Resultados de clientes' }], ['enterprise', '#enterprise', { en: 'Enterprise', es: 'Enterprise', pt: 'Enterprise' }]
+];
+const SRC_MAP = [[/customer|stor|cliente|caso|histór|result/i, 'results'], [/build with ai|crear con ia|criar com ia/i, 'bwai'], [/template|plantilla|modelo/i, 'imagine']];
+const secEl = (id) => { const s = SECTIONS.find((x) => x[0] === id); return s ? document.querySelector(s[1]) : null; };
+
+const DICT = {
+  en: { rec: 'What do you want your <b>website</b> to do better? Pick one and I’ll tell you where conversions usually leak and what fixes it. About a minute.',
+    back: 'Welcome back. ', phPanel: 'Ask a follow-up', reading: 'Reading', theSite: 'landbot.io', online: 'Online', working: 'Working on it',
+    facts: 'What I’ve understood', edit: 'tap to correct', nba: 'What makes most sense now', why: 'Why', or: 'or',
+    build: 'Build my agent free →', demo: 'Book a demo', plan: 'Which plan fits me?',
+    whyDemo: 'With your team and goal, a call with a member of the team maps it to your funnel and the right plan, so you don’t have to work it out alone.', tooLong: (n) => `Long message: I kept the first ${n} characters.`,
+    whyBuild: 'You can build it yourself today: free plan, no card, live in about 15 minutes.', whyPlan: 'Two answers, channel and volume, are enough to tell you the plan and the price.',
+    planH: 'The plan that fits', planWhy: 'Why', perMo: '/mo', annual: 'billed annually', monthlyP: (p) => `or ${p} monthly`, custom: 'Custom pricing', trial: '14-day free trial · no card on Free', planSrc: 'Prices from landbot.io/pricing',
+    mail: 'Where should the team reach you?', mailSub: 'They reply within one business day, with everything you told me already on the table.', mailPh: 'you@company.com', sendIt: 'Send', mailBad: 'That doesn’t look like an email yet.',
+    done: 'Done. Here’s what changed', r1: 'Lead saved in Landbot', r1s: 'Inbox · LP Conversion Agent', r2: 'Context attached to the lead', r3: 'Follow-up promised', r3s: 'within one business day · Landbot team',
+    foot: 'Answers only from landbot.io and its pricing page · nothing is shared until you book a demo.',
+    fromSite: 'LANDBOT.IO', pointLabel: 'Landbot AI is reading this',
+    msgPlan: 'Which plan fits me?', msgDemo: 'I’d like to book a demo.', msgCorr: (k, v) => `Quick correction: ${k} is ${v}.`,
+    nudge: { hero: ['Tell me your goal · I’ll show you how', 'I want to turn more of my website visitors into leads. How would Landbot do it?'],
+      watch: ['See it on your funnel · 1 question', 'How would this work on my website?'],
+      imagine: ['Find the template for your case · 1 question', 'Which template fits my case?'],
+      bwai: ['Build one with your AI · I’ll show you how', 'How do I build a Landbot agent with my AI?'],
+      motion: ['Map your first agent · 2 questions', 'Help me map my first agent.'],
+      engine: ['Find where you lose conversions · 2 questions', 'Where am I losing conversions on my website?'],
+      results: ['Get the case closest to yours · 1 question', 'Which customer case is closest to mine?'],
+      enterprise: ['Check it fits your stack · 1 question', 'Does it work with my CRM and security requirements?'] },
+    k: { why: 'Why here', use: 'Goal', chan: 'Channel', size: 'Team', vol: 'Volume', crm: 'CRM', country: 'Country', from: 'Came from' }, teamSees: 'What the team will see', direct: 'direct', volU: '/mo', guessed: 'guessed',
+    oneMore: 'Yes, one more question', USE: { leads: 'Website leads', wa: 'WhatsApp', support: 'Support' }, CHAN: { web: 'Website', wa: 'WhatsApp', both: 'Website + WhatsApp' },
+    calLoading: 'Loading the calendar…', bookH: 'Book your 30-min expert session', bookSub: 'Pick a slot that suits you. They’ll have this conversation on hand, so no starting from zero.',
+    demoLang: 'Which language for the demo?', demoLangPT: 'Your demo will be in Portuguese.', bookGo: 'Choose a time →', booked: 'I’ve booked a time', mailInstead: 'Email me instead',
+    bookedMsg: 'Great, see you there. The team will have this conversation on hand.', freeToo: 'While you wait for the demo, you can start building free today and arrive with something built.',
+    supH: 'This one’s for our support team', supSub: 'They can look at your account and sort it fastest. The help center has guides and a way to reach them.', supGo: 'Open the help center →', backQ: 'Back to my questions',
+    starters: ['More leads from my site', 'Which plan fits me?', 'Book a demo'] },
+  es: { rec: '¿Qué quieres que tu <b>web</b> haga mejor? Elige una y te digo dónde se suelen perder conversiones y qué lo arregla. Un minuto.',
+    back: 'Hola de nuevo. ', phPanel: 'Haz otra pregunta', reading: 'Leyendo', theSite: 'landbot.io', online: 'En línea', working: 'Trabajando en ello',
+    facts: 'Lo que he entendido', edit: 'toca para corregir', nba: 'Lo que tiene más sentido ahora', why: 'Por qué', or: 'o',
+    build: 'Crear mi agente gratis →', demo: 'Reservar una demo', plan: '¿Qué plan me encaja?',
+    whyDemo: 'Con tu equipo y tu objetivo, una llamada con alguien del equipo lo aterriza en tu embudo y en el plan correcto, sin que tengas que descifrarlo solo.', tooLong: (n) => `Mensaje largo: me quedo con los primeros ${n} caracteres.`,
+    whyBuild: 'Puedes montarlo tú hoy: plan gratis, sin tarjeta, en vivo en unos 15 minutos.', whyPlan: 'Con dos respuestas, canal y volumen, te digo el plan y el precio.',
+    planH: 'El plan que te encaja', planWhy: 'Por qué', perMo: '/mes', annual: 'facturado anualmente', monthlyP: (p) => `o ${p} al mes`, custom: 'Precio a medida', trial: 'Prueba gratis de 14 días · sin tarjeta en Free', planSrc: 'Precios de landbot.io/pricing',
+    mail: '¿Dónde te contacta el equipo?', mailSub: 'Responden en un día laborable, con todo lo que me has contado ya sobre la mesa.', mailPh: 'tu@empresa.com', sendIt: 'Enviar', mailBad: 'Eso todavía no parece un email.',
+    done: 'Hecho. Esto es lo que ha cambiado', r1: 'Lead guardado en Landbot', r1s: 'Inbox · LP Conversion Agent', r2: 'Contexto adjunto al lead', r3: 'Seguimiento prometido', r3s: 'en un día laborable · equipo de Landbot',
+    foot: 'Responde solo con landbot.io y su página de precios · no se comparte nada hasta que reserves una demo.',
+    fromSite: 'LANDBOT.IO', pointLabel: 'Landbot AI está leyendo esto',
+    msgPlan: '¿Qué plan me encaja?', msgDemo: 'Quiero reservar una demo.', msgCorr: (k, v) => `Corrijo: ${k} es ${v}.`,
+    nudge: { hero: ['Cuéntame tu objetivo · te enseño cómo', 'Quiero convertir más visitas de mi web en leads. ¿Cómo lo haría Landbot?'],
+      watch: ['Míralo en tu embudo · 1 pregunta', '¿Cómo funcionaría esto en mi web?'],
+      imagine: ['Encuentra la plantilla para tu caso · 1 pregunta', '¿Qué plantilla encaja con mi caso?'],
+      bwai: ['Crea uno con tu IA · te enseño cómo', '¿Cómo creo un agente de Landbot con mi IA?'],
+      motion: ['Diseña tu primer agente · 2 preguntas', 'Ayúdame a diseñar mi primer agente.'],
+      engine: ['Descubre dónde pierdes conversiones · 2 preguntas', '¿Dónde estoy perdiendo conversiones en mi web?'],
+      results: ['El caso más parecido al tuyo · 1 pregunta', '¿Qué caso de cliente se parece más al mío?'],
+      enterprise: ['Comprueba que encaja con tu stack · 1 pregunta', '¿Funciona con mi CRM y mis requisitos de seguridad?'] },
+    k: { why: 'Por qué vino', use: 'Objetivo', chan: 'Canal', size: 'Equipo', vol: 'Volumen', crm: 'CRM', country: 'País', from: 'Vino de' }, teamSees: 'Lo que verá el equipo', direct: 'directo', volU: '/mes', guessed: 'deducido',
+    oneMore: 'Sí, una pregunta más', USE: { leads: 'Leads en la web', wa: 'WhatsApp', support: 'Soporte' }, CHAN: { web: 'Web', wa: 'WhatsApp', both: 'Web + WhatsApp' },
+    calLoading: 'Cargando el calendario…', bookH: 'Reserva tu sesión de 30 min con un experto', bookSub: 'Elige el hueco que mejor te venga. Tendrán esta conversación a mano, así que no empiezas de cero.',
+    demoLang: '¿En qué idioma quieres la demo?', demoLangPT: 'Tu demo será en portugués.', bookGo: 'Elegir hora →', booked: 'Ya he reservado', mailInstead: 'Prefiero que me escribáis',
+    bookedMsg: 'Genial, nos vemos ahí. El equipo tendrá esta conversación a mano.', freeToo: 'Mientras llega la demo, puedes empezar gratis hoy y llegar con algo ya montado.',
+    supH: 'Esto es cosa de nuestro equipo de soporte', supSub: 'Pueden mirar tu cuenta y resolverlo antes. En el centro de ayuda tienes guías y cómo contactarles.', supGo: 'Abrir el centro de ayuda →', backQ: 'Volver a mis preguntas',
+    starters: ['Más leads desde mi web', '¿Qué plan me encaja?', 'Reservar una demo'] },
+  pt: { rec: 'O que você quer que o seu <b>site</b> faça melhor? Escolha uma e eu te digo onde as conversões costumam escapar e o que resolve. Um minuto.',
+    back: 'Que bom te ver de novo. ', phPanel: 'Faça outra pergunta', reading: 'Lendo', theSite: 'landbot.io', online: 'Online', working: 'Trabalhando nisso',
+    facts: 'O que eu entendi', edit: 'toque para corrigir', nba: 'O que faz mais sentido agora', why: 'Por quê', or: 'ou',
+    build: 'Criar meu agente grátis →', demo: 'Agendar uma demo', plan: 'Qual plano encaixa para mim?',
+    whyDemo: 'Com o seu time e o seu objetivo, uma ligação com alguém do time leva isso para o seu funil e para o plano certo, sem você precisar descobrir sozinho.', tooLong: (n) => `Mensagem longa: fiquei com os primeiros ${n} caracteres.`,
+    whyBuild: 'Você pode montar hoje mesmo: plano grátis, sem cartão, no ar em uns 15 minutos.', whyPlan: 'Com duas respostas, canal e volume, eu te digo o plano e o preço.',
+    planH: 'O plano que encaixa', planWhy: 'Por quê', perMo: '/mês', annual: 'cobrança anual', monthlyP: (p) => `ou ${p} no mensal`, custom: 'Preço sob medida', trial: 'Teste grátis de 14 dias · sem cartão no Free', planSrc: 'Preços de landbot.io/pricing',
+    mail: 'Onde o time pode falar com você?', mailSub: 'Respondem em um dia útil, com tudo o que você me contou já na mesa.', mailPh: 'voce@empresa.com', sendIt: 'Enviar', mailBad: 'Isso ainda não parece um e-mail.',
+    done: 'Pronto. Isto é o que mudou', r1: 'Lead salvo em Landbot', r1s: 'Inbox · LP Conversion Agent', r2: 'Contexto anexado ao lead', r3: 'Retorno combinado', r3s: 'em um dia útil · time de Landbot',
+    foot: 'Responde só com landbot.io e a página de preços · nada é compartilhado até você agendar uma demo.',
+    fromSite: 'LANDBOT.IO', pointLabel: 'Landbot AI está lendo isto',
+    msgPlan: 'Qual plano encaixa para mim?', msgDemo: 'Quero agendar uma demo.', msgCorr: (k, v) => `Corrigindo: ${k} é ${v}.`,
+    nudge: { hero: ['Me conta o seu objetivo · eu mostro como', 'Quero transformar mais visitas do meu site em leads. Como Landbot faria isso?'],
+      watch: ['Veja no seu funil · 1 pergunta', 'Como isso funcionaria no meu site?'],
+      imagine: ['Encontre o modelo para o seu caso · 1 pergunta', 'Qual modelo encaixa no meu caso?'],
+      bwai: ['Crie um com a sua IA · eu mostro como', 'Como crio um agente de Landbot com a minha IA?'],
+      motion: ['Desenhe o seu primeiro agente · 2 perguntas', 'Me ajuda a desenhar o meu primeiro agente.'],
+      engine: ['Descubra onde você perde conversões · 2 perguntas', 'Onde estou perdendo conversões no meu site?'],
+      results: ['O caso mais parecido com o seu · 1 pergunta', 'Qual caso de cliente é mais parecido com o meu?'],
+      enterprise: ['Veja se encaixa no seu stack · 1 pergunta', 'Funciona com o meu CRM e os meus requisitos de segurança?'] },
+    k: { why: 'Por que veio', use: 'Objetivo', chan: 'Canal', size: 'Time', vol: 'Volume', crm: 'CRM', country: 'País', from: 'Veio de' }, teamSees: 'O que o time vai ver', direct: 'direto', volU: '/mês', guessed: 'deduzido',
+    oneMore: 'Sim, mais uma pergunta', USE: { leads: 'Leads no site', wa: 'WhatsApp', support: 'Suporte' }, CHAN: { web: 'Site', wa: 'WhatsApp', both: 'Site + WhatsApp' },
+    calLoading: 'Carregando o calendário…', bookH: 'Agende sua sessão de 30 min com um especialista', bookSub: 'Escolha o horário que for melhor. Eles vão ter esta conversa em mãos, então ninguém começa do zero.',
+    demoLang: 'Em qual idioma você quer a demo?', demoLangPT: 'A sua demo vai ser em português.', bookGo: 'Escolher horário →', booked: 'Já agendei', mailInstead: 'Prefiro que me escrevam',
+    bookedMsg: 'Ótimo, nos vemos lá. O time vai ter esta conversa em mãos.', freeToo: 'Enquanto a demo não chega, você já pode começar grátis hoje e chegar com algo montado.',
+    supH: 'Isso é com o nosso time de suporte', supSub: 'Eles podem olhar a sua conta e resolver mais rápido. A central de ajuda tem guias e um jeito de falar com eles.', supGo: 'Abrir a central de ajuda →', backQ: 'Voltar às minhas perguntas',
+    starters: ['Mais leads pelo meu site', 'Qual plano encaixa para mim?', 'Agendar uma demo'] }
+};
+Object.assign(DICT.en, { slow: 'This is taking longer than usual. Want me to try again?', retry: 'Try again', resetL: 'New conversation', mailSkip: 'No thanks, keep chatting', mailSkipped: 'Skipped. Carrying on.', teamBtn: 'Have the team email me', msgTeamMail: 'I’d like someone from the team to email me.', more: 'Continue ↓', mailBtn: 'Send it to my email', msgMail: 'Send it to my email, please.', mailSendH: 'Where should I send it?',
+  mailSendSub: 'The Landbot team sends it to your inbox within one business day, with this conversation attached. No call needed.',
+  r3Send: 'On its way to your inbox', r3sSend: 'within one business day · Landbot team', sketchH: 'Your agent · sketch', promptH: 'Prompt for your AI',
+  promptSub: 'Paste it in Claude, ChatGPT, Codex or Cursor once Landbot is connected: landbot.io/build-with-ai.', copy: 'Copy', copied: 'Copied ✓',
+  whyMail: 'Keep what we worked out here in your inbox, to share it or build it later. No call needed.', themeL: 'Light mode', themeD: 'Dark mode', sent: 'Explored in the chat',
+  starters: ['Capture & qualify leads', 'Book more meetings', 'Automate support', 'Book a demo'] });
+Object.assign(DICT.es, { slow: 'Esto está tardando más de lo normal. ¿Lo intento de nuevo?', retry: 'Reintentar', resetL: 'Nueva conversación', mailSkip: 'No, gracias, sigo con el chat', mailSkipped: 'Omitido. Seguimos.', teamBtn: 'Que me escriba el equipo', msgTeamMail: 'Prefiero que alguien del equipo me escriba por email.', more: 'Continuar ↓', mailBtn: 'Envíamelo por email', msgMail: 'Envíamelo por email, por favor.', mailSendH: '¿A qué email te lo envío?',
+  mailSendSub: 'El equipo de Landbot te lo envía en un día laborable, con esta conversación. Sin llamadas.',
+  r3Send: 'De camino a tu email', r3sSend: 'en un día laborable · equipo de Landbot', sketchH: 'Tu agente · esbozo', promptH: 'Prompt para tu IA',
+  promptSub: 'Pégalo en Claude, ChatGPT, Codex o Cursor con Landbot ya conectado: landbot.io/build-with-ai.', copy: 'Copiar', copied: 'Copiado ✓',
+  whyMail: 'Guárdate lo que hemos visto aquí en tu email, para compartirlo o montarlo después. Sin llamadas.', themeL: 'Modo claro', themeD: 'Modo oscuro', sent: 'Visto en el chat',
+  starters: ['Captar y cualificar leads', 'Conseguir más reuniones', 'Automatizar el soporte', 'Reservar una demo'] });
+Object.assign(DICT.pt, { slow: 'Isto está demorando mais que o normal. Quer que eu tente de novo?', retry: 'Tentar de novo', resetL: 'Nova conversa', mailSkip: 'Não, obrigado, sigo no chat', mailSkipped: 'Ignorado. Seguimos.', teamBtn: 'Quero que o time me escreva', msgTeamMail: 'Prefiro que alguém do time me escreva por e-mail.', more: 'Continuar ↓', mailBtn: 'Enviar para o meu e-mail', msgMail: 'Me envia por e-mail, por favor.', mailSendH: 'Para qual e-mail eu envio?',
+  mailSendSub: 'O time de Landbot envia em um dia útil, com esta conversa. Sem ligação.',
+  r3Send: 'A caminho do seu e-mail', r3sSend: 'em um dia útil · time de Landbot', sketchH: 'O seu agente · esboço', promptH: 'Prompt para a sua IA',
+  promptSub: 'Cole no Claude, ChatGPT, Codex ou Cursor com Landbot já conectado: landbot.io/build-with-ai.', copy: 'Copiar', copied: 'Copiado ✓',
+  whyMail: 'Guarde o que vimos aqui no seu e-mail, para compartilhar ou montar depois. Sem ligação.', themeL: 'Modo claro', themeD: 'Modo escuro', sent: 'Visto no chat',
+  starters: ['Captar e qualificar leads', 'Agendar mais reuniões', 'Automatizar o suporte', 'Agendar uma demo'] });
+/* AI agent template cards (10-nov-2026) */
+Object.assign(DICT.en, { tplH: 'Template', tplTry: 'Try it full screen', tplFull: 'Full screen', tplClose: 'Close preview', tplGain: 'What you get', tplLoading: 'Loading the live agent…', tplMore: 'See all templates', below: 'More below', stripH: 'Or start from a template', stripSub: 'Live agents you can try now and make yours.', blogH: 'From the blog', blogGo: 'Read the post' });
+Object.assign(DICT.es, { tplH: 'Plantilla', tplTry: 'Probar a pantalla completa', tplFull: 'Pantalla completa', tplClose: 'Cerrar vista previa', tplGain: 'Qué consigues', tplLoading: 'Cargando el agente en vivo…', tplMore: 'Ver todas las plantillas', below: 'Sigue abajo', stripH: 'O empieza desde una plantilla', stripSub: 'Agentes en vivo que puedes probar ahora y hacer tuyos.', blogH: 'Del blog', blogGo: 'Leer el artículo' });
+Object.assign(DICT.pt, { tplH: 'Modelo', tplTry: 'Testar em tela cheia', tplFull: 'Tela cheia', tplClose: 'Fechar prévia', tplGain: 'O que você ganha', tplLoading: 'Carregando o agente ao vivo…', tplMore: 'Ver todos os modelos', below: 'Continua abaixo', stripH: 'Ou comece por um modelo', stripSub: 'Agentes ao vivo para testar agora e fazer seus.', blogH: 'Do blog', blogGo: 'Ler o artigo' });
+const htmlLang = () => { const l = (document.documentElement.lang || '').toLowerCase(); return l.startsWith('es') ? 'es' : l.startsWith('pt') ? 'pt' : 'en'; };
+let PAGE_LANG = htmlLang();
+let LANG = PAGE_LANG;
+let T = DICT[LANG];
+
+/* phones: the builder works best on a computer, so the sign-up CTA asks for the account now and the build later (Fabo, 6-oct-2026) */
+const MOBILE = matchMedia('(hover: none) and (pointer: coarse)').matches || window.innerWidth < 768;
+if (MOBILE) {
+  const M = { en: ['Create my account now →', 'Create the free account now from your phone (1 min, no card) and build it later on your computer, where the builder works best.'],
+    es: ['Crear mi cuenta ahora →', 'Crea la cuenta gratis ahora desde el móvil (1 min, sin tarjeta) y móntalo luego en el ordenador, donde el builder funciona mejor.'],
+    pt: ['Criar minha conta agora →', 'Crie a conta grátis agora pelo celular (1 min, sem cartão) e monte depois no computador, onde o builder funciona melhor.'] };
+  const H = { en: '1 min from your phone · build it later on your computer', es: '1 min desde el móvil · lo montas luego en el ordenador', pt: '1 min pelo celular · você monta depois no computador' };
+  for (const [l, [b, w]] of Object.entries(M)) if (DICT[l]) { DICT[l].build = b; DICT[l].whyBuild = w; DICT[l].mobHint = H[l]; if (DICT[l].freeGo) DICT[l].freeGo = b; if (DICT[l].planGo) DICT[l].planGo = b; }
+}
+const LANG_CUES = {
+  es: [/[¿¡ñ]/, /\b(hola|gracias|qué|cuánto|cuanto|cómo|quiero|tengo|necesito|precio|cuesta|puedo|mis|nuestro|empresa|mensajes|usted|vale|una|unos|las|los|del|pero|hay|muy|soy|somos|hablar|ventas|ya|funciona|también|dónde|cuándo|y|el|la|es|todavía|aún|al|nos|unas|mes|queremos|para|lo|tenemos|hacer|citas|visitas|equipo|personas)\b/gi],
+  pt: [/[ãõç]|\bvocê\b/i, /\b(olá|oi|obrigad[oa]|quanto|como|quero|tenho|preciso|preço|custa|posso|meu|minha|nosso|nossa|empresa|mensagens|com|uma|um|por|pelo|pela|mas|tem|muito|sou|somos|falar|vendas|já|funciona|também|onde|quando|e|o|é|ainda|do|da|na|mês|queremos|para|isso|fazer|equipe|pessoas|não|são|vocês|agendar|reunião|gostaria|horário)\b/gi],
+  en: [/(?!)/, /\b(hello|hi|thanks|what|how|much|will|does|the|my|our|we|need|want|cost|price|company|messages|can|is|i|with|to|and|for|it|you|this|do|are|talk|sales|already|customer|working|of|in|yet|team|people|yes|let's|lets|pick|time|call|book|booked|sure|sounds|good|please|would|like|ok|okay|that|works|have|has|us|be)\b/gi],
+};
+function detectLang(q) {
+  q = String(q).replace(/\S+@\S+|https?:\/\/\S+|\b[\w-]+\.(com|io|es|net|org|br)\b/gi, ' ');   // emails, links and domains say nothing about the language
+  if ((q.match(/\p{L}/gu) || []).length < 3) return null;
+  const score = {};
+  for (const [l, [strong, words]] of Object.entries(LANG_CUES)) score[l] = (strong.test(q) ? 2 : 0) + (q.match(words) || []).length;
+  const [best, second] = Object.entries(score).sort((a, b) => b[1] - a[1]);
+  const short = q.trim().split(/\s+/).length <= 2;
+  return best[1] > second[1] && (best[1] >= 2 || short) ? best[0] : null;
+}
+function followLang(q) { const l = detectLang(q); if (l && l !== LANG && DICT[l]) { LANG = l; T = DICT[LANG]; paint(); } }
+const fmt = (n) => Math.round(n).toLocaleString(LANG === 'en' ? 'en-US' : LANG === 'pt' ? 'pt-BR' : 'es-ES');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const h = (html) => { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; };
+
+let visits = 0;
+try { visits = +(localStorage.getItem('awe-lpccx-visits') || 0); localStorage.setItem('awe-lpccx-visits', String(visits + 1)); } catch (_) {}
+const st = { core: null, boot: null, facts: {}, awaiting: null, answers: 0, nbaKey: '', open: false, t0: Date.now(), teamDone: false, section: '', cited: new Set(), items: new Set(), mailMode: 'team', hot: 0 };
+const J = () => (window.lbJourney && window.lbJourney.describe && window.lbJourney.describe()) || null;
+function initFacts() {
+  try { const d = J(); if (d && d.from) st.facts.from = { v: d.from, direct: d.from === 'direct', guess: true }; } catch (_) {}
+  if (GEO.cc) st.facts.country = { cc: GEO.cc, guess: true };
+}
+initFacts();
+
+/* ---------- the context line the agent reads with the first message ---------- */
+function contextLine() {
+  const add = [`page language ${PAGE_LANG}`, `chat language ${LANG}`];
+  if (MOBILE) add.push('device mobile');
+  if (GEO.cc) add.push(`country ${countryName(GEO.cc, 'en')} (inferred from ${GEO.how}) · geo ${GEO.tier}`);
+  if (GEO.tier === 'C') add.push('no call offers unless they ask: lead with starting free');   // the agent's Demo rule alone kept offering calls to geo C (30-oct)
+  if (st.restarted && st.userMsgs && st.userMsgs.length) add.push('conversation continues; earlier the visitor said: ' + st.userMsgs.slice(-5).map((m) => '"' + m.slice(0, 140) + '"').join(' / '));
+  const base = window.lbJourney && window.lbJourney.line ? window.lbJourney.line().replace('before this article', 'before this landing page') : '';
+  return base ? base.replace(/\]$/, ' · ' + add.join(' · ') + ']') : '[Page context: ' + add.join(' · ') + ']';
+}
+
+/* ---------- back: the real bot, headless ---------- */
+function loadSDK() {
+  if (window.Landbot) return Promise.resolve(window.Landbot);
+  if (!document.querySelector('script[data-awe-sdk]')) { const s = document.createElement('script'); s.type = 'module'; s.src = SDK_URL; s.dataset.aweSdk = '1'; document.head.appendChild(s); }
+  return new Promise((res, rej) => { const t0 = Date.now(); const tick = () => window.Landbot ? res(window.Landbot) : (Date.now() - t0 > 15000 ? rej(new Error('sdk timeout')) : setTimeout(tick, 60)); tick(); });
+}
+function boot() {
+  if (st.boot) return st.boot;
+  st.boot = (async () => {
+    const LB = await loadSDK();
+    const cfg = await fetch(CONFIG_URL).then((r) => r.json());
+    cfg.customData = Object.assign({}, cfg.customData, { source: ENTRY.source, subsource: ENTRY.demo, country: GEO.cc || '', country_tier: GEO.tier || '', page_lang: PAGE_LANG });
+    const core = new LB.Core(cfg);
+    st.core = core; st.real = true;
+    let greetRes; const greeted = new Promise((r) => (greetRes = r)); st._greet = greetRes;
+    const gen = st.gen = (st.gen || 0) + 1;
+    core.pipelines.$readableSequence.subscribe((m) => { if (gen !== st.gen) return; try { onMsg(m); } catch (e) { console.warn('[awe]', e); } });
+    await core.init(cfg);
+    await Promise.race([greeted, sleep(8000)]);
+  })();
+  return st.boot;
+}
+/* a fresh Landbot session (the SDK keeps none in the browser): used to leave the email step or to start over */
+async function restartSession() {
+  clearTimeout(st.wd);
+  if (st.more) { const m = st.more; st.more = null; m(false); }
+  try { if (st.core) st.core.destroy(); } catch (_) {}
+  st.gen = (st.gen || 0) + 1;
+  Object.assign(st, { boot: null, core: null, greeted: false, ctxSent: false, flowBtns: null, greetBtns: null, chain: Promise.resolve() });
+}
+/* the booking's Calendly references ride on the next message as custom_data, so the bot can look the invitee up (Xavi, 8-oct-2026) */
+function withData(m) { const d = st.nextData; st.nextData = null; m.custom_data = Object.assign({ conversation_summary: pageSummary(), visitor_journey: pageJourney() }, d || {}); return m; }
+/* The summary for sales is built here, not by the agent: the agent rewriting it on every turn added ~4-6 s to each reply (test 17-nov-2026).
+   It rides on every message as custom_data, so whatever turn the agent exits on, the bot already holds @conversation_summary and @visitor_journey
+   for the sales email, Slack and the note. */
+function pageSummary() {
+  const f = st.facts || {}, P = [];
+  const msgs = (st.userMsgs || []).map((m) => m.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (msgs.length) P.push('Visitor said: ' + msgs.slice(-6).map((m) => '"' + (m.length > 180 ? m.slice(0, 177) + '…' : m) + '"').join(' / '));
+  if (f.why) P.push('Why now: ' + f.why.v);
+  const facts = FACT_ORDER.filter((k) => f[k] && !['why', 'from'].includes(k)).map((k) => k + ': ' + factVal(k, f[k]));
+  if (st.plan) facts.push('plan shown: ' + PLAN_COPY.en[st.plan][0]);
+  if (facts.length) P.push(facts.join(' · '));
+  if (st.items && st.items.size) P.push('Sent in chat: ' + [...st.items].join(', '));
+  if (st.lpGoal) P.push('LP goal: ' + st.lpGoal + (st.lpPain ? ' · pain: ' + st.lpPain : ''));
+  if (st.demoLang) P.push('Demo language: ' + st.demoLang);
+  P.push('Page: ' + location.pathname + ' (' + PAGE_LANG + '), chat in ' + LANG);
+  return P.join('. ').slice(0, 1200);
+}
+function pageJourney() {
+  const d = J(); if (!d) return '';
+  return [(d.from === 'direct' ? 'direct' : d.from) + (d.campaign ? ' · ' + d.campaign : ''), d.before && d.before.length ? d.before.join(' → ') : '', 'visit #' + (d.visit || 1)].filter(Boolean).join(' | ');
+}
+const calRefs = (d) => { const p = (d && d.payload) || {}; return { calendly_invitee: (p.invitee && p.invitee.uri) || '', calendly_event: (p.event && p.event.uri) || '' }; };
+async function deliver(text, payload) {
+  await boot();
+  if (payload && st.salesReady) await st.salesReady;   // a booking button waits until the bot is really at sales_book
+  if (payload && st.salesMissed) await reroute();
+  const list = st.flowBtns || st.greetBtns;   // the buttons of the LAST fixed block, not the greeting's (both use $0, $1…)
+  const btn = payload && list && list.find((b) => b.payload === payload);
+  /* the payload moves the flow; the label is the visitor's own words, so the agent keeps their language */
+  return st.core.sendMessage(withData(payload ? { type: 'button', message: text || (btn && btn.text), payload } : { type: 'text', message: text }));
+}
+
+/* ---------- UI: lava orb bar, layer ---------- */
+/* geo C: the opening chips never offer the demo or sales (sales rule: tier C → only if they ask). GEO is known from the start;
+   BOOK_N / tierNow() are defined further down, so the starters use their own list. */
+const STARTER_SALES = /^(book a demo|talk to sales|reservar una demo|hablar con ventas|agendar uma demo|falar com vendas)$/i;
+const starterChips = () => T.starters.filter((l) => !(GEO.tier === 'C' && STARTER_SALES.test(l.trim()))).map((l) => `<button type="button" class="awe-chip" data-awe-say="${esc(l)}">${esc(l)}</button>`).join('');
+let gooN = 0;
+const LAND = !(new URLSearchParams(location.search).get('theme') === 'glass' || window.LB_AWE_THEME === 'glass');   // Land is the default on this LP (Fabo, 24-nov); ?theme=glass shows the old look
+if (LAND) document.documentElement.classList.add('awe-land');
+/* Land's glyph (Brandbook V2): ring + core; the pink arc and pulses only while working (.work) */
+const GLYPH = (cls) => `<span class="awe-lava awe-glyph ${cls || ''}" aria-hidden="true"><svg viewBox="2 2 96 96"><circle class="g-p g-p0" cx="50" cy="50" r="30"/><circle class="g-p g-p1" cx="50" cy="50" r="30"/><g class="g-body"><circle class="g-arc" cx="50" cy="50" r="43"/><circle class="g-ring" cx="50" cy="50" r="30"/><circle class="g-core" cx="50" cy="50" r="11"/></g></svg></span>`;
+const LAVA = (cls) => LAND ? GLYPH(cls) : LAVA0(cls);
+const LAVA0 = (cls) => { const id = 'aweGoo' + (++gooN); return `<span class="awe-lava ${cls || ''}" aria-hidden="true">
+  <svg viewBox="0 0 300 300"><defs><filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="0" width="300" height="300"><feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/></filter></defs>
+  <g filter="url(#${id})"><circle class="g1" cx="150" cy="150" r="52" fill="#F58B0B"/><circle class="g2" cx="178" cy="170" r="40" fill="#636BFC"/><circle class="g3" cx="135" cy="120" r="34" fill="#4FCCC2"/><circle class="g4" cx="120" cy="175" r="28" fill="#FF3F7B"/><circle class="g5" cx="180" cy="125" r="24" fill="#F58B0B"/></g></svg></span>`; };
+const launch = h(`<div id="awe-launch" class="tuck" role="region" aria-label="Landbot AI"><div class="awe-chips" data-awe-starters></div>
+  <form class="awe-pill" data-awe-form><button type="button" data-awe-open style="all:unset;cursor:pointer;border-radius:50%">${LAVA()}</button><input type="text" autocomplete="off" maxlength="700"><button type="submit" class="awe-pill-send" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button></form></div>`);
+const panel = h(`<aside id="awe-panel" role="dialog" aria-label="Landbot AI" aria-hidden="true">
+  <div class="awe-head">${LAVA('sm')}<div class="awe-head-t"><b>${LAND ? 'Land' : 'Landbot AI'}</b><span class="awe-status"></span></div>
+    <button type="button" class="awe-x" data-awe-reset aria-label="New conversation" title="New conversation">↺</button><button type="button" class="awe-x awe-theme" data-awe-theme aria-label="Theme"></button><button type="button" class="awe-x" data-awe-close aria-label="Close">✕</button></div>
+  <div class="awe-facts"><div class="awe-facts-h"><span data-t="facts"></span><span data-t="edit"></span></div><div class="awe-facts-list"></div></div>
+  <div class="awe-thread" aria-live="polite"></div>
+  <button type="button" class="awe-down" data-awe-down hidden></button>
+  <div class="awe-foot"><div class="awe-chips" data-awe-replies></div>
+    <form class="awe-compose" data-awe-form><input type="text" autocomplete="off" maxlength="700"><button class="awe-send" type="submit" aria-label="Send">↑</button></form>
+    <!-- foot note removed 10-nov-2026: it was for us, not for the visitor (Fabo) --></div></aside>`);
+const scrim = h('<div id="awe-scrim" aria-hidden="true"></div>');
+scrim.addEventListener('click', () => closePanel());
+document.body.appendChild(scrim); document.body.appendChild(panel); document.body.appendChild(launch);
+/* the home's own mobile sticky (lb-sticky-cta: Start for free / Demo) hides while the agent is on the page: one thing asking for attention (decision 2-oct-2026) */
+const hideSticky = document.createElement('style'); hideSticky.textContent = '.lb-sticky-cta{display:none!important}'; document.head.appendChild(hideSticky);
+const launchInput = launch.querySelector('input'), pill = launch.querySelector('.awe-pill');
+const starters = launch.querySelector('[data-awe-starters]');
+// Safari blurs the input on pointer down without focusing the chip.
+let starterPress = null;
+function clearStarterPress() {
+  starterPress = null;
+  starters.classList.remove('is-pressing');
+}
+starters.addEventListener('pointerdown', (e) => {
+  if (!e.isPrimary || e.button !== 0 || !e.target.closest('button[data-awe-say]')) return;
+  starterPress = e;
+  starters.classList.add('is-pressing');
+});
+// iPhone sends the mouse events of a tap after pointerup: never let a chip's mousedown blur the input.
+starters.addEventListener('mousedown', (e) => { if (e.target.closest('button[data-awe-say]')) e.preventDefault(); });
+window.addEventListener('pointerup', (e) => {
+  const press = starterPress;
+  if (!press || press.pointerId !== e.pointerId) return;
+  // Let the browser dispatch the native click before restoring the focus rule (touch: iOS sends it later).
+  setTimeout(() => { if (starterPress === press) clearStarterPress(); }, e.pointerType === 'mouse' ? 0 : 700);
+}, true);
+window.addEventListener('pointercancel', (e) => {
+  if (starterPress?.pointerId === e.pointerId) clearStarterPress();
+}, true);
+window.addEventListener('blur', clearStarterPress);
+const badge = h('<span class="awe-badge" aria-hidden="true"></span>');
+launch.querySelector('[data-awe-open]').appendChild(badge);
+function setUnread(n) {
+  st.unread = n; badge.textContent = n > 9 ? '9+' : String(n || ''); badge.classList.toggle('on', n > 0);
+  if (n > 0) { badge.classList.remove('bump'); void badge.offsetWidth; badge.classList.add('bump'); }
+  launch.querySelector('[data-awe-open]').setAttribute('aria-label', n > 0 ? `Landbot AI · ${n} new` : 'Landbot AI');
+}
+function paint() {
+  starters.innerHTML = starterChips();
+  panel.querySelector('.awe-foot input').placeholder = T.phPanel;
+  panel.querySelectorAll('[data-t]').forEach((n) => { n.textContent = T[n.dataset.t]; });
+  if (!panel.querySelector('.awe-status').classList.contains('work')) panel.querySelector('.awe-status').textContent = T.online;
+  st.section = ''; syncLaunch(); renderFacts();
+}
+const thread = panel.querySelector('.awe-thread'), statusEl = panel.querySelector('.awe-status'), headOrb = panel.querySelector('.awe-head .awe-lava');
+thread.addEventListener('scroll', () => syncDown(), { passive: true });
+const repliesEl = panel.querySelector('[data-awe-replies]');
+/* new content scrolls into view, but a long reply never scrolls past its own first bubble (st.anchor):
+   the visitor reads it from the top and scrolls on when they want (no "Continue" gate, Fabo 10-nov-2026) */
+const push = (el) => { thread.appendChild(el); requestAnimationFrame(() => {
+  const max = thread.scrollHeight - thread.clientHeight, a = st.anchor && st.anchor.isConnected ? st.anchor : null;
+  thread.scrollTop = a ? Math.max(thread.scrollTop, Math.min(max, thread.scrollTop + a.getBoundingClientRect().top - thread.getBoundingClientRect().top - 8)) : max;
+  syncDown();
+}); return el; };
+/* "More below ↓": a quiet pointer when part of the reply is under the fold (never a gate) */
+function syncDown() {
+  const b = panel.querySelector('.awe-down'); if (!b) return;
+  const show = !st.calOpen && thread.scrollHeight - thread.scrollTop - thread.clientHeight > 60;
+  if (show) { b.textContent = T.below + ' ↓'; b.style.top = (thread.offsetTop + thread.clientHeight - 46) + 'px'; }
+  b.hidden = !show;
+}
+/* entry_point_click = the panel was opened (launcher, a message, ⌘K or a reset); trigger says which, first one per page view wins */
+function openPanel(trigger) {
+  emit('entry_point_click', ENTRY.demo, { trigger: trigger || 'other' });
+  if (st.unread) setUnread(0);
+  if (!st.open) { st.open = true; panel.classList.add('on'); scrim.classList.add('on'); panel.setAttribute('aria-hidden', 'false'); syncLaunch(); }
+  if (!thread.children.length) {
+    const d = J();
+    const ctx = d && d.from && d.from !== 'direct' ? `<div class="awe-src"><button type="button" data-awe-fact="from"><em>${esc(T.k.from)}</em>${esc(d.from)}</button></div>` : '';
+    push(h(`<div class="awe-msg"><p>${visits > 0 ? T.back : ''}${T.rec}</p>${ctx}</div>`));
+    repliesEl.innerHTML = starterChips();
+  }
+}
+function closePanel() { st.open = false; panel.classList.remove('on'); scrim.classList.remove('on', 'lift'); panel.setAttribute('aria-hidden', 'true'); syncLaunch(); }
+function setWorking(label) {
+  thread.querySelectorAll('.awe-working').forEach((n) => n.remove());
+  if (!label) { statusEl.textContent = T.online; statusEl.classList.remove('work'); headOrb.classList.remove('work'); return; }
+  statusEl.textContent = T.working + '…'; statusEl.classList.add('work'); headOrb.classList.add('work');
+  push(h(`<div class="awe-working">${thinkHTML('')}</div>`));   // orb + dots only: no "Reading landbot.io…" label (Fabo, 10-nov-2026)
+}
+/* thinking = the lava orb (faster, .work) + three dots; the label says what it is reading */
+const thinkHTML = (label) => `<div class="awe-think" aria-hidden="true">${LAVA('xs work')}<div class="awe-typing"><i></i><i></i><i></i></div>${label ? `<span class="awe-think-l">${esc(label)}</span>` : ''}</div>`;
+function guessSection(q) {
+  if (/plan|price|pricing|cost|precio|cuesta|preço|custa|cuánto|quanto/i.test(q)) return 'landbot.io/pricing';
+  if (/case|caso|customer|cliente|história|stor/i.test(q)) return '“Results from professionals like you”';
+  if (/crm|hubspot|salesforce|pipedrive|integra/i.test(q)) return '“Why marketing and revenue teams choose Landbot”';
+  if (/whatsapp/i.test(q)) return '“Run sales & support on WhatsApp”';
+  if (/support|soporte|suporte|ticket/i.test(q)) return '“Automate customer support at scale”';
+  if (/chatbot|different|diferen|compar/i.test(q)) return '“Structured like a chatbot. Smart like an AI agent.”';
+  return T.theSite;
+}
+
+/* ---------- sending ---------- */
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+async function skipMail(card) {   // leave the flow's email step: it accepts only an email, so a new session takes over
+  card.dataset.done = 'skip'; card.querySelectorAll('input,button').forEach((x) => (x.disabled = true));
+  card.querySelector('.awe-mail-skip')?.remove();
+  card.appendChild(h(`<div class="awe-sub" style="margin-top:8px">${esc(T.mailSkipped)}</div>`));
+  st.restarted = true; await restartSession();
+}
+/* Booking chips go straight to the booking card (17-nov-2026: the visitor waited ~10-16 s for the agent to route "Talk to Sales").
+   The chip text still goes to the agent, so the bot moves to sales_book in the background; booking buttons wait for that.
+   If the agent answers instead of routing, its reply is shown and the bot is routed again before any booking button is sent. */
+const BOOK_CHIPS = new Set(['book a demo', 'talk to sales', 'reservar una demo', 'hablar con ventas', 'agendar uma demo', 'falar com vendas',
+  'book my expert session', 'reservar mi sesión con un experto', 'agendar minha sessão com um especialista',
+  'i’d like to book a demo.', 'quiero reservar una demo.', 'quero agendar uma demo.']);   // starters + the "Book a demo" button of the next-step card (T.msgDemo)
+/* typed variants count too: lower case, no accents, no ¿?¡! or quotes ("como landbot puede ayudarme" = the chip). Whole-phrase match only, never a substring. */
+const normQ = (s) => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[¿?¡!.,;:"“”'’]/g, ' ').replace(/\s+/g, ' ').trim();
+const nSet = (xs) => new Set(xs.map(normQ));
+const BOOK_N = nSet([...BOOK_CHIPS, 'i want to talk to sales', 'talk to sales please', 'i want a demo', 'book a call', 'i want to book a demo', 'quiero hablar con ventas', 'hablar con un comercial', 'quiero una demo', 'quiero reservar una demo', 'reservar demo', 'quero falar com vendas', 'quero uma demo', 'agendar demo']);
+const SALES_ASK = { en: 'Talk to Sales', es: 'Hablar con ventas', pt: 'Falar com vendas' };
+function fastStart() { st.fastBook = true; st.salesMissed = false; st.salesReady = new Promise((r) => (st._salesReady = r)); clearTimeout(st.fastT); st.fastT = setTimeout(() => fastEnd(true), 40000); }
+function fastEnd(missed) { if (!st.fastBook) return; st.fastBook = false; clearTimeout(st.fastT); st.salesMissed = !!missed; const ok = st._salesReady; st._salesReady = null; st.salesReady = null; if (ok) ok(); }
+async function reroute() {
+  fastStart();
+  st.core.sendMessage(withData({ type: 'text', message: SALES_ASK[LANG] || SALES_ASK.en }));
+  await Promise.race([st.salesReady, new Promise((r) => setTimeout(r, 30000))]);
+  st.salesMissed = false;
+}
+/* "Build with AI" answers at once from the page (17-nov-2026: the agent took 22-29 s for an answer that is always the same).
+   Nothing goes to the agent (a background call made the next question wait up to 34 s): the visitor's next message carries a note
+   that they already saw the steps, so the agent does not repeat them. */
+const BWAI_CHIPS = new Set(['build with ai', 'crear con ia', 'criar com ia', 'use landbot with my ai', 'usar landbot con mi ia', 'usar landbot com a minha ia']);
+const BWAI = {
+  en: { a: 'Describe what you want to the AI you already use, and **Landbot** builds it: an agent for your website or WhatsApp, ready to edit.\n1. **Create a free account**: 14-day trial, no card.\n2. **Connect Landbot to your AI**: Claude, ChatGPT, Codex, Cursor or any MCP client. The setup for each one is at https://landbot.io/build-with-ai\n3. **Describe your agent** or start from a template: it appears in your Landbot account.\n' + SIGNUP,
+        f: ['Which AI can I use?', 'Is it free?', 'Book a demo'] },
+  es: { a: 'Describe lo que quieres a la IA que ya usas y **Landbot** lo construye: un agente para tu web o WhatsApp, listo para editar.\n1. **Crea una cuenta gratis**: 14 días de prueba, sin tarjeta.\n2. **Conecta Landbot a tu IA**: Claude, ChatGPT, Codex, Cursor o cualquier cliente MCP. Los pasos para cada una están en https://landbot.io/build-with-ai\n3. **Describe tu agente** o parte de una plantilla: aparece en tu cuenta de Landbot.\n' + SIGNUP,
+        f: ['¿Qué IA puedo usar?', '¿Es gratis?', 'Reservar una demo'] },
+  pt: { a: 'Descreva o que você quer para a IA que você já usa e **Landbot** constrói: um agente para o seu site ou WhatsApp, pronto para editar.\n1. **Crie uma conta grátis**: 14 dias de teste, sem cartão.\n2. **Conecte Landbot à sua IA**: Claude, ChatGPT, Codex, Cursor ou qualquer cliente MCP. O passo a passo de cada uma está em https://landbot.io/build-with-ai\n3. **Descreva o seu agente** ou comece de um template: ele aparece na sua conta de Landbot.\n' + SIGNUP,
+        f: ['Qual IA posso usar?', 'É grátis?', 'Agendar uma demo'] }
+};
+const HELP_CHIPS = new Set(['how can landbot help me?', '¿cómo puede ayudarme landbot?', 'como landbot pode me ajudar?', 'como o landbot pode me ajudar?']);
+const HELP = {   /* facts only from the agent's KNOWLEDGE (Home): no-code, web + WhatsApp, leads/support/bookings, integrations, ~15 min, 12,000+ teams */
+  en: { a: '**Landbot** builds AI agents and chatbots for your website and WhatsApp, without code.\n1. **Capture and qualify leads** and book meetings in the chat.\n2. **Answer customers 24/7** with your own knowledge, and hand over to your team with the context.\n3. **Connect your tools**: HubSpot, Salesforce, Pipedrive, Calendly, Zapier and more.\nYour first agent is live in about 15 minutes. More than 12,000 teams use it.',
+        f: ['More leads from my site', 'Sell on WhatsApp', 'Automate support', 'Book a demo'] },
+  es: { a: '**Landbot** crea agentes de IA y chatbots para tu web y WhatsApp, sin código.\n1. **Capta y cualifica leads** y reserva reuniones en el chat.\n2. **Atiende a clientes 24/7** con tu propio conocimiento, y pasa a tu equipo con el contexto.\n3. **Conecta tus herramientas**: HubSpot, Salesforce, Pipedrive, Calendly, Zapier y más.\nTu primer agente está en marcha en unos 15 minutos. Lo usan más de 12.000 equipos.',
+        f: ['Más leads desde mi web', 'Vender por WhatsApp', 'Automatizar el soporte', 'Reservar una demo'] },
+  pt: { a: '**Landbot** cria agentes de IA e chatbots para o seu site e WhatsApp, sem código.\n1. **Capte e qualifique leads** e agende reuniões no chat.\n2. **Atenda clientes 24/7** com o seu próprio conhecimento, e passe para o seu time com o contexto.\n3. **Conecte suas ferramentas**: HubSpot, Salesforce, Pipedrive, Calendly, Zapier e mais.\nSeu primeiro agente fica no ar em cerca de 15 minutos. Mais de 12.000 times usam.',
+        f: ['Mais leads pelo meu site', 'Vender pelo WhatsApp', 'Automatizar o suporte', 'Agendar uma demo'] }
+};
+/* each typed variant knows its language: the answer comes in it and the chat switches to it, even on a page in another language */
+const nMap = (o) => { const m = new Map(); Object.keys(o).forEach((l) => o[l].forEach((x) => m.set(normQ(x), l))); return m; };
+const BWAI_N = nMap({ en: ['build with ai', 'use landbot with my ai', 'build it with ai', 'build with my ai', 'create with ai'],
+  es: ['crear con ia', 'usar landbot con mi ia', 'construir con ia', 'crear con inteligencia artificial', 'crealo con tu ia', 'crearlo con ia'],
+  pt: ['criar com ia', 'usar landbot com a minha ia', 'construir com ia', 'criar com inteligencia artificial', 'crie com a sua ia'] });
+const HELP_N = nMap({ en: ['how can landbot help me?', 'how can landbot help', 'how does landbot help', 'what does landbot do', 'what is landbot', 'what can landbot do'],
+  es: ['¿cómo puede ayudarme landbot?', 'como landbot puede ayudarme', 'como me puede ayudar landbot', 'como me ayuda landbot', 'en que me puede ayudar landbot', 'en que puede ayudarme landbot', 'que hace landbot', 'que es landbot', 'que puede hacer landbot'],
+  pt: ['como landbot pode me ajudar?', 'como o landbot pode me ajudar', 'como landbot pode ajudar', 'o que landbot faz', 'o que o landbot faz', 'o que e landbot', 'o que e o landbot', 'o que landbot pode fazer'] });
+const LEADS_N = nMap({ en: ['more leads from my site', 'more leads from my website', 'get more leads'], es: ['más leads desde mi web', 'mas leads desde mi sitio', 'conseguir mas leads', 'mas leads en mi web'], pt: ['mais leads pelo meu site', 'mais leads no meu site', 'conseguir mais leads'] });
+const WAPP_N = nMap({ en: ['sell on whatsapp', 'sell through whatsapp', 'whatsapp sales'], es: ['vender por whatsapp', 'vender en whatsapp', 'ventas por whatsapp'], pt: ['vender pelo whatsapp', 'vender no whatsapp', 'vendas pelo whatsapp'] });
+const SUPP_N = nMap({ en: ['automate support', 'automate customer support', 'automate customer service'], es: ['automatizar el soporte', 'automatizar soporte', 'automatizar la atencion al cliente'], pt: ['automatizar o suporte', 'automatizar suporte', 'automatizar o atendimento'] });
+const AIS_N = nMap({ en: ['which ai can i use', 'what ai can i use', 'which ai tools can i use'], es: ['que ia puedo usar', 'que ias puedo usar', 'con que ia funciona'], pt: ['qual ia posso usar', 'quais ias posso usar', 'com qual ia funciona'] });
+const FREE_N = nMap({ en: ['is it free', 'is landbot free', 'is there a free plan', 'is there a free trial'], es: ['es gratis', 'landbot es gratis', 'hay plan gratis', 'hay un plan gratis', 'hay plan gratuito', 'hay prueba gratis'], pt: ['e gratis', 'landbot e gratis', 'tem plano gratis', 'tem plano gratuito', 'tem teste gratis'] });
+const CRM_N = nMap({ en: ['does it work with my crm', 'does it integrate with my crm', 'can i connect my crm'], es: ['funciona con mi crm', 'se integra con mi crm', 'puedo conectar mi crm'], pt: ['funciona com o meu crm', 'integra com o meu crm', 'posso conectar meu crm'] });
+const WAPRICE_N = nMap({ en: ['how much is the whatsapp plan', 'how much does the whatsapp plan cost', 'whatsapp plan price', 'how much does whatsapp cost'], es: ['cuanto cuesta el plan de whatsapp', 'precio del plan de whatsapp', 'cuanto cuesta whatsapp'], pt: ['quanto custa o plano de whatsapp', 'preco do plano de whatsapp', 'quanto custa o whatsapp'] });
+const SAFE_N = nMap({ en: ['is my data safe', 'is it secure', 'is it gdpr compliant'], es: ['mis datos estan seguros', 'estan seguros mis datos', 'es seguro', 'cumple el rgpd', 'cumple gdpr'], pt: ['meus dados estao seguros', 'os meus dados estao seguros', 'e seguro', 'cumpre o gdpr'] });
+const HELP_NOTE = '(They already saw the overview of what Landbot does: do not repeat it.)';
+/* the three follow-ups of "How can Landbot help me?" also answer from the page (17-nov-2026: through the agent they took 16-25 s).
+   Facts only from the agent's KNOWLEDGE (customer stories, integrations, plans). No prices here: the site shows EUR or USD by country. */
+const LEADS = {
+  en: { a: 'Landbot turns visits into qualified leads, right in the chat on your website.\n1. **Qualify** with a few natural questions instead of a long form.\n2. **Book the meeting** in the chat, or send the lead to your CRM: HubSpot, Salesforce, Pipedrive.\n3. **Hand over** to your sales team with the whole conversation.\nLead Laundry got **+35% conversion** and Emma **−30% cost per lead**.\n' + SIGNUP,
+        f: ['Book a demo', 'Build with AI', 'Does it work with my CRM?'] },
+  es: { a: 'Landbot convierte visitas en leads cualificados, en el propio chat de tu web.\n1. **Cualifica** con unas pocas preguntas naturales en lugar de un formulario largo.\n2. **Reserva la reunión** en el chat, o envía el lead a tu CRM: HubSpot, Salesforce, Pipedrive.\n3. **Pasa el lead** a tu equipo de ventas con toda la conversación.\nLead Laundry consiguió **+35 % de conversión** y Emma **−30 % de coste por lead**.\n' + SIGNUP,
+        f: ['Reservar una demo', 'Crear con IA', '¿Funciona con mi CRM?'] },
+  pt: { a: 'Landbot transforma visitas em leads qualificados, no próprio chat do seu site.\n1. **Qualifique** com poucas perguntas naturais em vez de um formulário longo.\n2. **Agende a reunião** no chat, ou envie o lead para o seu CRM: HubSpot, Salesforce, Pipedrive.\n3. **Passe o lead** para o seu time de vendas com toda a conversa.\nLead Laundry conseguiu **+35% de conversão** e Emma **−30% de custo por lead**.\n' + SIGNUP,
+        f: ['Agendar uma demo', 'Criar com IA', 'Funciona com o meu CRM?'] },
+  tpl: ['t13', 't23', 't16']
+};
+const WAPP = {
+  en: { a: 'Landbot puts an AI agent on your WhatsApp number that answers, recommends and sells 24/7.\n1. **Answer product and order questions** with your own knowledge.\n2. **Qualify and recommend**, then send the booking or payment link.\n3. **Hand over** to a person when needed, with the context.\nHotelbeds handles **350,000 WhatsApp queries** with Landbot, live in 4 weeks. Your own number comes with the **Professional + WhatsApp** plan.\n' + SIGNUP,
+        f: ['Book a demo', 'Build with AI', 'How much is the WhatsApp plan?'] },
+  es: { a: 'Landbot pone un agente de IA en tu número de WhatsApp que responde, recomienda y vende 24/7.\n1. **Responde dudas de producto y pedidos** con tu propio conocimiento.\n2. **Cualifica y recomienda**, y envía el enlace de reserva o de pago.\n3. **Pasa a una persona** cuando hace falta, con el contexto.\nHotelbeds atiende **350.000 consultas por WhatsApp** con Landbot, en marcha en 4 semanas. Tu propio número va con el plan **Professional + WhatsApp**.\n' + SIGNUP,
+        f: ['Reservar una demo', 'Crear con IA', '¿Cuánto cuesta el plan de WhatsApp?'] },
+  pt: { a: 'Landbot coloca um agente de IA no seu número de WhatsApp que responde, recomenda e vende 24/7.\n1. **Responda dúvidas de produto e pedidos** com o seu próprio conhecimento.\n2. **Qualifique e recomende**, e envie o link de agendamento ou de pagamento.\n3. **Passe para uma pessoa** quando precisar, com o contexto.\nHotelbeds atende **350.000 consultas pelo WhatsApp** com Landbot, no ar em 4 semanas. O seu próprio número vem com o plano **Professional + WhatsApp**.\n' + SIGNUP,
+        f: ['Agendar uma demo', 'Criar com IA', 'Quanto custa o plano de WhatsApp?'] },
+  tpl: ['t11', 't42', 't10']
+};
+const SUPP = {
+  en: { a: 'Landbot answers your customers 24/7 with your own knowledge, and passes the hard cases to your team.\n1. **Answer FAQs and account questions** from your help content.\n2. **Route** each case to the right team, with the conversation attached.\n3. **Hand over live** to a person when the customer needs one.\nCASFID cut manual messages by **70%**, and Allianz Benelux routes customers in **under a minute**.\n' + SIGNUP,
+        f: ['Book a demo', 'Build with AI', 'Is my data safe?'] },
+  es: { a: 'Landbot atiende a tus clientes 24/7 con tu propio conocimiento y pasa los casos difíciles a tu equipo.\n1. **Responde preguntas frecuentes y de cuenta** con tu contenido de ayuda.\n2. **Deriva** cada caso al equipo adecuado, con la conversación adjunta.\n3. **Pasa en directo** a una persona cuando el cliente lo necesita.\nCASFID redujo un **70 %** los mensajes manuales y Allianz Benelux deriva a sus clientes en **menos de un minuto**.\n' + SIGNUP,
+        f: ['Reservar una demo', 'Crear con IA', '¿Mis datos están seguros?'] },
+  pt: { a: 'Landbot atende os seus clientes 24/7 com o seu próprio conhecimento e passa os casos difíceis para o seu time.\n1. **Responda perguntas frequentes e de conta** com o seu conteúdo de ajuda.\n2. **Encaminhe** cada caso para o time certo, com a conversa anexada.\n3. **Passe ao vivo** para uma pessoa quando o cliente precisar.\nCASFID reduziu em **70%** as mensagens manuais e Allianz Benelux encaminha os clientes em **menos de um minuto**.\n' + SIGNUP,
+        f: ['Agendar uma demo', 'Criar com IA', 'Meus dados estão seguros?'] },
+  tpl: ['t21', 't14', 't20']
+};
+const fNote = (what) => `(They already saw the page's overview of ${what}: do not repeat it.)`;
+/* third level: the concrete questions under those answers, also fixed (17-nov-2026). Facts only from the agent's KNOWLEDGE.
+   The WhatsApp price is computed with the page's own PRICE table (EUR or USD by country) and the plan card is drawn below it. */
+const AIS = {
+  en: { a: 'You can build with the AI you already use.\n1. **Claude** (claude.ai or the desktop app): add the Landbot connector and skills.\n2. **Claude Code**: install the Landbot plugin with one command.\n3. **ChatGPT, Codex or Cursor**: connect the Landbot MCP. ChatGPT is in beta and also works on its Free plan.\nAny other MCP client connects at https://mcp.landbot.io/mcp. The setup for each one is at https://landbot.io/build-with-ai', f: ['Is it free?', 'Book a demo'] },
+  es: { a: 'Puedes construir con la IA que ya usas.\n1. **Claude** (claude.ai o la app de escritorio): añade el conector y las skills de Landbot.\n2. **Claude Code**: instala el plugin de Landbot con un solo comando.\n3. **ChatGPT, Codex o Cursor**: conecta el MCP de Landbot. ChatGPT está en beta y funciona también con su plan Free.\nCualquier otro cliente MCP se conecta en https://mcp.landbot.io/mcp. Los pasos para cada una están en https://landbot.io/build-with-ai', f: ['¿Es gratis?', 'Reservar una demo'] },
+  pt: { a: 'Você pode construir com a IA que já usa.\n1. **Claude** (claude.ai ou o app de desktop): adicione o conector e as skills de Landbot.\n2. **Claude Code**: instale o plugin de Landbot com um único comando.\n3. **ChatGPT, Codex ou Cursor**: conecte o MCP de Landbot. ChatGPT está em beta e também funciona no plano Free dele.\nQualquer outro cliente MCP se conecta em https://mcp.landbot.io/mcp. O passo a passo de cada uma está em https://landbot.io/build-with-ai', f: ['É grátis?', 'Agendar uma demo'] }
+};
+const FREE = {
+  en: { a: 'Yes, you can start free. The **Free** plan costs nothing: 100 chats a month, the full builder and a WhatsApp test number. It does not include AI chats.\nPaid plans come with a **14-day free trial**, no card needed. After it, your account moves to Free.\n' + SIGNUP, f: ['Which AI can I use?', 'Book a demo'] },
+  es: { a: 'Sí, puedes empezar gratis. El plan **Free** no cuesta nada: 100 chats al mes, el builder completo y un número de prueba de WhatsApp. No incluye chats con IA.\nLos planes de pago tienen **14 días de prueba gratis**, sin tarjeta. Después, tu cuenta pasa a Free.\n' + SIGNUP, f: ['¿Qué IA puedo usar?', 'Reservar una demo'] },
+  pt: { a: 'Sim, você pode começar grátis. O plano **Free** não custa nada: 100 chats por mês, o builder completo e um número de teste do WhatsApp. Não inclui chats com IA.\nOs planos pagos têm **14 dias de teste grátis**, sem cartão. Depois, a sua conta passa para Free.\n' + SIGNUP, f: ['Qual IA posso usar?', 'Agendar uma demo'] }
+};
+const CRM = {
+  en: { a: 'Yes. Landbot connects **two-way with HubSpot and Salesforce**, and also with Pipedrive and Zoho: it reads and updates your CRM during the conversation.\nIt also works with Google Sheets, Airtable, Slack, Calendly, Stripe, Zapier, n8n and webhooks.\nCRM integrations come with the **Professional** plan and above.', f: ['Book a demo', 'Is it free?'] },
+  es: { a: 'Sí. Landbot se conecta **en las dos direcciones con HubSpot y Salesforce**, y también con Pipedrive y Zoho: lee y actualiza tu CRM durante la conversación.\nTambién funciona con Google Sheets, Airtable, Slack, Calendly, Stripe, Zapier, n8n y webhooks.\nLas integraciones con CRM van con el plan **Professional** o superior.', f: ['Reservar una demo', '¿Es gratis?'] },
+  pt: { a: 'Sim. Landbot se conecta **nas duas direções com HubSpot e Salesforce**, e também com Pipedrive e Zoho: lê e atualiza o seu CRM durante a conversa.\nTambém funciona com Google Sheets, Airtable, Slack, Calendly, Stripe, Zapier, n8n e webhooks.\nAs integrações com CRM vêm com o plano **Professional** ou superior.', f: ['Agendar uma demo', 'É grátis?'] }
+};
+const waP = () => [PRICE.s + (PRICE.pro[0] + PRICE.wa[0]), PRICE.s + (PRICE.pro[1] + PRICE.wa[1])];
+const WAPRICE = {
+  en: { a: () => { const [a, m] = waP(); return `**Professional + WhatsApp** costs **${a}/mo** billed annually, or ${m}/mo billed monthly, before tax.\nIt includes 1 WhatsApp number, 500 AI chats and 2,500 chats a month, with CRM integrations.\nYou can try it free for 14 days, no card needed.`; }, f: ['Book a demo', 'Is it free?'], plan: 'prowa' },
+  es: { a: () => { const [a, m] = waP(); return `**Professional + WhatsApp** cuesta **${a}/mes** con pago anual, o ${m}/mes con pago mensual, antes de impuestos.\nIncluye 1 número de WhatsApp, 500 chats con IA y 2.500 chats al mes, con integraciones de CRM.\nPuedes probarlo gratis 14 días, sin tarjeta.`; }, f: ['Reservar una demo', '¿Es gratis?'], plan: 'prowa' },
+  pt: { a: () => { const [a, m] = waP(); return `**Professional + WhatsApp** custa **${a}/mês** com pagamento anual, ou ${m}/mês com pagamento mensal, antes de impostos.\nInclui 1 número de WhatsApp, 500 chats com IA e 2.500 chats por mês, com integrações de CRM.\nVocê pode testar grátis por 14 dias, sem cartão.`; }, f: ['Agendar uma demo', 'É grátis?'], plan: 'prowa' }
+};
+const SAFE = {
+  en: { a: 'Yes. Landbot is **GDPR** compliant and **SOC 2** certified, with **EU hosting**.\nYour chats are not used to train AI models.', f: ['Book a demo', 'Is it free?'] },
+  es: { a: 'Sí. Landbot cumple el **RGPD** y tiene la certificación **SOC 2**, con **alojamiento en la UE**.\nTus chats no se usan para entrenar modelos de IA.', f: ['Reservar una demo', '¿Es gratis?'] },
+  pt: { a: 'Sim. Landbot cumpre o **GDPR** e tem a certificação **SOC 2**, com **hospedagem na UE**.\nOs seus chats não são usados para treinar modelos de IA.', f: ['Agendar uma demo', 'É grátis?'] }
+};
+const BWAI_NOTE = '(They already saw the Build with AI steps and link: do not repeat them.)';   // short: the agent fails on long messages
+
+/* ---------- /lp/chatbot-creator-x: goal -> pain -> recommendation, all from the page (Slim, 24-nov-2026) ----------
+   Fit rule (draft, to validate with Sales): the 30-min expert session when the fix depends on their own questions,
+   CRM, calendar or helpdesk; start free when a template solves it. Facts only from the agent's KNOWLEDGE. No prices. */
+const SESSION = { en: 'Book my expert session', es: 'Reservar mi sesión con un experto', pt: 'Agendar minha sessão com um especialista' };
+const STARTF = { en: 'Start free', es: 'Empezar gratis', pt: 'Começar grátis' };
+const ISFREE = { en: 'Is it free?', es: '¿Es gratis?', pt: 'É grátis?' };
+const PAINS = {
+  leads: { en: ['Not enough leads', 'Leads are low quality', 'Slow handoff to sales'], es: ['Pocos leads', 'Leads de baja calidad', 'Traspaso lento a ventas'], pt: ['Poucos leads', 'Leads de baixa qualidade', 'Repasse lento para vendas'] },
+  meet: { en: ['No-shows', 'Slow follow-up', 'Unqualified attendees'], es: ['Gente que no se presenta', 'Seguimiento lento', 'Reuniones sin encaje'], pt: ['Pessoas que não aparecem', 'Follow-up lento', 'Reuniões sem fit'] },
+  supp: { en: ['Through forms', 'Through email', 'Through a chat already'], es: ['Por formularios', 'Por email', 'Ya por un chat'], pt: ['Por formulário', 'Por e-mail', 'Já por um chat'] }
+};
+const LPG_LEADS_N = nMap({ en: ['capture & qualify leads', 'capture and qualify leads'], es: ['captar y cualificar leads'], pt: ['captar e qualificar leads'] });
+const LPG_MEET_N = nMap({ en: ['book more meetings', 'more meetings'], es: ['conseguir más reuniones', 'mas reuniones'], pt: ['agendar mais reuniões', 'mais reunioes'] });
+const LPG_SUPP_N = nMap({ en: ['automate support'], es: ['automatizar el soporte', 'automatizar soporte'], pt: ['automatizar o suporte', 'automatizar suporte'] });
+const LPG_LEADS = { lp: { lpGoal: 'leads' },
+  en: { a: 'More qualified leads from the traffic you already pay for.\nLandbot swaps the form for a short conversation that qualifies and books in the chat. Lead Laundry got **+35% conversion**.\nWhere does it hurt most today?', f: PAINS.leads.en },
+  es: { a: 'Más leads cualificados con el tráfico que ya pagas.\nLandbot cambia el formulario por una conversación corta que cualifica y reserva en el propio chat. Lead Laundry consiguió **+35 % de conversión**.\n¿Dónde te duele más hoy?', f: PAINS.leads.es },
+  pt: { a: 'Mais leads qualificados com o tráfego que você já paga.\nLandbot troca o formulário por uma conversa curta que qualifica e agenda no próprio chat. Lead Laundry conseguiu **+35% de conversão**.\nOnde dói mais hoje?', f: PAINS.leads.pt } };
+const LPG_MEET = { lp: { lpGoal: 'meetings' },
+  en: { a: 'More meetings on the calendar, with the right people.\nThe agent qualifies first and offers the slots in the same chat, so real buyers book while they’re interested.\nWhat gets in the way today?', f: PAINS.meet.en },
+  es: { a: 'Más reuniones en el calendario, con la gente adecuada.\nEl agente cualifica primero y ofrece los huecos en el mismo chat, así los compradores reales reservan mientras les interesa.\n¿Qué lo frena hoy?', f: PAINS.meet.es },
+  pt: { a: 'Mais reuniões na agenda, com as pessoas certas.\nO agente qualifica primeiro e oferece os horários no mesmo chat, assim os compradores reais agendam enquanto estão interessados.\nO que atrapalha hoje?', f: PAINS.meet.pt } };
+const LPG_SUPP = { lp: { lpGoal: 'support' },
+  en: { a: 'Fewer tickets for your team, faster answers for customers.\nLandbot answers 24/7 with your own knowledge and hands the hard cases to a person, with the context. CASFID cut manual messages by **70%**.\nWhere do customers reach you today?', f: PAINS.supp.en },
+  es: { a: 'Menos tickets para tu equipo y respuestas más rápidas para tus clientes.\nLandbot responde 24/7 con tu propio conocimiento y pasa los casos difíciles a una persona, con el contexto. CASFID redujo un **70 %** los mensajes manuales.\n¿Por dónde te contactan hoy tus clientes?', f: PAINS.supp.es },
+  pt: { a: 'Menos tickets para o seu time e respostas mais rápidas para os clientes.\nLandbot responde 24/7 com o seu próprio conhecimento e passa os casos difíceis para uma pessoa, com o contexto. CASFID reduziu em **70%** as mensagens manuais.\nPor onde os clientes falam com você hoje?', f: PAINS.supp.pt } };
+const sessF = (l) => [SESSION[l], STARTF[l]], freeF = (l) => [SESSION[l], ISFREE[l]];   // the sign-up card is already above: no 'Start free' chip
+const SESS_LINE = { en: 'That’s what the 30-minute session with an expert maps for your case.', es: 'Eso es lo que mapea para tu caso la sesión de 30 minutos con un experto.', pt: 'É isso que a sessão de 30 minutos com um especialista mapeia para o seu caso.' };
+const FREE_LINE = { en: 'You can build it yourself today from a template, live in about 15 minutes, no card.', es: 'Puedes montarlo tú hoy desde una plantilla, en marcha en unos 15 minutos y sin tarjeta.', pt: 'Você pode montar hoje a partir de um modelo, no ar em cerca de 15 minutos e sem cartão.' };
+const rec = (lp, tpl, kind, txt) => { const o = { lp, tpl }; ['en', 'es', 'pt'].forEach((l) => { o[l] = { a: txt[l] + '\n' + (kind === 'free' ? FREE_LINE[l] + '\n' + SIGNUP : SESS_LINE[l]), f: kind === 'free' ? freeF(l) : sessF(l) }; }); o.kind = kind; return o; };
+const painN = (g, i) => nMap({ en: [PAINS[g].en[i]], es: [PAINS[g].es[i]], pt: [PAINS[g].pt[i]] });
+const LPP = [
+  ['leads', 0, 'free', ['t16', 't23', 't46'], { en: 'More leads usually means fewer fields: a three-question chat instead of the form, on the pages that already get traffic.', es: 'Más leads suele significar menos campos: un chat de tres preguntas en lugar del formulario, en las páginas que ya tienen tráfico.', pt: 'Mais leads costuma significar menos campos: um chat de três perguntas no lugar do formulário, nas páginas que já têm tráfego.' }],
+  ['leads', 1, 'session', null, { en: 'Then qualify before sales sees them: the agent asks the questions your team asks and only books the ones that fit.\nConversational Design got **+40% lead conversion** this way.', es: 'Entonces cualifica antes de que ventas los vea: el agente hace las preguntas que hace tu equipo y solo reserva a los que encajan.\nConversational Design consiguió **+40 % de conversión de leads** así.', pt: 'Então qualifique antes de vendas ver: o agente faz as perguntas que o seu time faz e só agenda quem tem fit.\nConversational Design conseguiu **+40% de conversão de leads** assim.' }],
+  ['leads', 2, 'session', null, { en: 'Then close the gap: the agent books the meeting in the chat and sends the lead to HubSpot, Salesforce or Pipedrive with the whole conversation.\nSales starts with the context, not a cold form.', es: 'Entonces cierra el hueco: el agente reserva la reunión en el chat y manda el lead a HubSpot, Salesforce o Pipedrive con toda la conversación.\nVentas empieza con el contexto, no con un formulario frío.', pt: 'Então feche a lacuna: o agente agenda a reunião no chat e envia o lead para HubSpot, Salesforce ou Pipedrive com a conversa inteira.\nVendas começa com o contexto, não com um formulário frio.' }],
+  ['meet', 0, 'session', null, { en: 'No-shows drop when the meeting is booked while the interest is hot, by someone who already answered a few questions.\nThe agent qualifies, books in the chat and can remind them on WhatsApp.', es: 'Las ausencias bajan cuando la reunión se reserva con el interés en caliente, por alguien que ya respondió unas preguntas.\nEl agente cualifica, reserva en el chat y puede recordárselo por WhatsApp.', pt: 'As faltas caem quando a reunião é agendada com o interesse em alta, por alguém que já respondeu algumas perguntas.\nO agente qualifica, agenda no chat e pode lembrar pelo WhatsApp.' }],
+  ['meet', 1, 'free', ['t13', 't19', 't24'], { en: 'Then remove the wait: the agent answers and offers the slots in the same chat, day or night, with your Calendly.', es: 'Entonces quita la espera: el agente responde y ofrece los huecos en el mismo chat, de día o de noche, con tu Calendly.', pt: 'Então tire a espera: o agente responde e oferece os horários no mesmo chat, de dia ou de noite, com o seu Calendly.' }],
+  ['meet', 2, 'session', null, { en: 'Then ask before the calendar: a few natural questions, and only the ones that fit get the slots. The rest get a useful next step.\nEmma cut cost per lead by **30%**.', es: 'Entonces pregunta antes del calendario: unas pocas preguntas naturales, y solo quien encaja ve los huecos. El resto recibe un siguiente paso útil.\nEmma redujo un **30 %** el coste por lead.', pt: 'Então pergunte antes da agenda: poucas perguntas naturais, e só quem tem fit vê os horários. O resto recebe um próximo passo útil.\nEmma reduziu em **30%** o custo por lead.' }],
+  ['supp', 0, 'free', ['t21', 't14', 't20'], { en: 'Then turn the form into answers: the agent solves the common questions on the spot and only opens a case when it needs a person.', es: 'Entonces convierte el formulario en respuestas: el agente resuelve al momento las preguntas comunes y solo abre un caso cuando hace falta una persona.', pt: 'Então transforme o formulário em respostas: o agente resolve na hora as perguntas comuns e só abre um caso quando precisa de uma pessoa.' }],
+  ['supp', 1, 'session', null, { en: 'Then catch questions before they become emails: the agent answers on your site or WhatsApp 24/7 and routes the rest to the right team, with the conversation attached.\nAllianz Benelux routes customers in **under a minute**.', es: 'Entonces atrapa las preguntas antes de que se conviertan en emails: el agente responde en tu web o WhatsApp 24/7 y deriva el resto al equipo adecuado, con la conversación.\nAllianz Benelux deriva a sus clientes en **menos de un minuto**.', pt: 'Então pegue as perguntas antes de virarem e-mails: o agente responde no seu site ou WhatsApp 24/7 e encaminha o resto para o time certo, com a conversa.\nAllianz Benelux encaminha os clientes em **menos de um minuto**.' }],
+  ['supp', 2, 'session', null, { en: 'Then the question is what your chat can’t do today: answer with your own knowledge, act in your tools and hand over with the context.', es: 'Entonces la pregunta es qué no puede hacer hoy tu chat: responder con tu propio conocimiento, actuar en tus herramientas y pasar a una persona con el contexto.', pt: 'Então a pergunta é o que o seu chat não faz hoje: responder com o seu próprio conhecimento, agir nas suas ferramentas e passar para uma pessoa com o contexto.' }]
+];
+const GOAL_NAME = { leads: 'leads', meet: 'meetings', supp: 'support' };
+const LP_FIXED = LPP.map(([g, i, kind, tpl, txt]) => [painN(g, i), rec({ lpGoal: GOAL_NAME[g], lpPain: PAINS[g].en[i] }, tpl, kind, txt),
+  `[Visitor chose: goal ${GOAL_NAME[g]} · pain ${PAINS[g].en[i].toLowerCase()} · page recommended: ${kind === 'free' ? 'start free' : 'expert session'}]`, !!tpl]);
+const STARTF_N = nMap({ en: ['start free', 'start for free'], es: ['empezar gratis', 'empezar gratis ahora'], pt: ['começar grátis', 'comecar gratis'] });
+const STARTF_A = {
+  en: { a: 'Here you go: the free plan has no card, and paid plans come with a 14-day trial.\nStart from a template or describe your agent to AI Copilot.\n' + SIGNUP, f: [SESSION.en, ISFREE.en] },
+  es: { a: 'Aquí lo tienes: el plan gratis no pide tarjeta, y los de pago tienen 14 días de prueba.\nEmpieza desde una plantilla o describe tu agente a AI Copilot.\n' + SIGNUP, f: [SESSION.es, ISFREE.es] },
+  pt: { a: 'Aqui está: o plano grátis não pede cartão, e os pagos têm 14 dias de teste.\nComece por um modelo ou descreva o seu agente para o AI Copilot.\n' + SIGNUP, f: [SESSION.pt, ISFREE.pt] } };
+const LP_GOALS = [[LPG_LEADS_N, LPG_LEADS, '[Visitor chose: goal leads]', false], [LPG_MEET_N, LPG_MEET, '[Visitor chose: goal meetings]', false], [LPG_SUPP_N, LPG_SUPP, '[Visitor chose: goal support]', false],
+  ...LP_FIXED, [STARTF_N, STARTF_A, '(They already saw the sign-up link: do not repeat it.)', false]];
+/* a fixed answer drawn by the page: the session may start meanwhile, and only a new visitor message stops it.
+   A numbered list stays in one bubble; every other line is its own bubble. */
+async function fixedAnswer(c, strip, tpl) {
+  const seq = st.userSeq, live = () => seq === st.userSeq, reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, bubbles = [];
+  const text = typeof c.a === 'function' ? c.a() : c.a;   // the WhatsApp price is computed (EUR or USD)
+  text.split('\n').forEach((l) => { const item = /^\d+[.)]\s/.test(l), prev = bubbles[bubbles.length - 1]; if (item && prev && prev.list) prev.lines.push(l); else bubbles.push({ list: item, lines: [l] }); });
+  for (let i = 0; i < bubbles.length; i++) {
+    if (i > 0 && !reduce) { const dots = push(h(thinkHTML(''))); await sleep(450); dots.remove(); }
+    if (!live()) return;
+    const el = push(h(`<div class="awe-msg">${md(bubbles[i].lines.join('\n'))}</div>`)); if (i === 0) { st.anchor = el; ding(); }
+  }
+  st.tplForce = tpl || null;   // its own three templates (leads / WhatsApp / support), whatever words the answer uses
+  const strips = () => thread.querySelectorAll('.awe-tplstrip').length, before = strips();   // one strip per fixed answer
+  if (strip) for (let k = 0; k < 2 && live() && strips() === before; k++) await tplStrip(text);
+  if (c.plan && live()) planCard(c.plan);   // the page's own plan card, same prices   // a second try if the session started mid-load
+  st.tplForce = null;
+  if (!live()) return;
+  const fx = tierNow() === 'C' ? c.f.filter((x) => !BOOK_N.has(normQ(x))) : c.f;   // geo C: never offer the demo or sales (they can still ask for it)
+  repliesEl.innerHTML = fx.map((x) => `<button type="button" class="awe-chip" data-awe-say="${esc(x)}">${esc(x)}</button>`).join('');
+}
+const MAX_MSG = 700;   // longer messages made the agent fail ('something went wrong'): 750 worked, 900 failed on 30-oct; Sales asked for a cap
+async function say(text, payload) {
+  let q = (text || '').trim(); if (!q) return;
+  /* entry_point_conversation_start = the visitor sent a first message (a chip or typed), whether the page or the agent answers it.
+     Once per page view. Typed text is never sent to analytics; a chip sends its fixed label. */
+  const via = st.via || 'other'; st.via = '';
+  try { sessionStorage.setItem('lb_x_cta', '1'); } catch (_) {}   // talked to the agent: no exit pop-up in this session
+  emit('entry_point_conversation_start', ENTRY.demo, via === 'chip' ? { trigger: via, chip_label: q.slice(0, 60) } : { trigger: via });
+  const cut = !payload && q.length > MAX_MSG; if (cut) q = q.slice(0, MAX_MSG).trim();
+  if (st.more) { const m = st.more; st.more = null; m(false); }
+  st.userSeq = (st.userSeq || 0) + 1; st.anchor = null; if (!payload) st.lastQ = [st.lastQ, q].filter(Boolean).join(' ').slice(-600);   // a new message from the visitor stops the rest of the reply being drawn
+  const pendingMail = thread.querySelector('.awe-mail:not([data-done])');
+  if (pendingMail && !payload) {
+    if (EMAIL_RX.test(q)) { const f = pendingMail.querySelector('form'); f.querySelector('input').value = q; f.requestSubmit(); return; }
+    await skipMail(pendingMail);
+  }
+  if (!payload) (st.userMsgs = st.userMsgs || []).push(q);
+  openPanel('message'); repliesEl.innerHTML = '';
+  thread.querySelectorAll('.awe-nba').forEach((n) => n.remove());
+  push(h(`<div class="awe-me">${esc(q)}</div>`));
+  if (cut) push(h(`<div class="awe-sub" style="text-align:right;margin:-4px 2px 6px">${esc(T.tooLong(MAX_MSG.toLocaleString(LANG === 'en' ? 'en' : 'es')))}</div>`));
+  if (!payload) followLang(q); readUser(q); setWorking(guessSection(q));
+  const fast = !payload && BOOK_N.has(normQ(q));
+  if (fast) { fastStart(); setWorking(null); bookCard(); }
+  const nq = normQ(q), FIXED = [...LP_GOALS, [BWAI_N, BWAI, BWAI_NOTE, true], [HELP_N, HELP, HELP_NOTE, false], [LEADS_N, LEADS, fNote('Landbot for leads'), true], [WAPP_N, WAPP, fNote('Landbot on WhatsApp'), true], [SUPP_N, SUPP, fNote('Landbot for support'), true],
+    [AIS_N, AIS, fNote('which AI tools work with Landbot'), false], [FREE_N, FREE, fNote('the Free plan and the trial'), false], [CRM_N, CRM, fNote('the CRM integrations'), false], [WAPRICE_N, WAPRICE, fNote('the WhatsApp plan price'), false], [SAFE_N, SAFE, fNote('security (GDPR, SOC 2, EU hosting)'), false]];
+  const hit = payload ? null : FIXED.find(([m]) => m.has(nq)), fixed = hit && [hit[1], hit[2], hit[3], hit[0].get(nq)];
+  if (fixed) {
+    if (fixed[3] !== LANG && DICT[fixed[3]]) { LANG = fixed[3]; T = DICT[LANG]; paint(); }   // same switch as followLang()
+    if (fixed[0].lp) Object.assign(st, fixed[0].lp);   // goal / pain picked on the LP, for the sales summary
+    st.fixedNote = fixed[1]; setWorking(null); fixedAnswer(fixed[0][LANG] || fixed[0].en, fixed[2], fixed[0].tpl); return;
+  }   // answered here, nothing sent to the agent
+  let out = q;
+  if (!st.ctxSent && !payload) { st.ctxSent = true; out = contextLine() + '\n\n' + q; }
+  if (st.fixedNote && !payload) { out = out.slice(0, out.length - q.length) + st.fixedNote + '\n' + q; st.fixedNote = ''; }   // after the context line, right before their words
+  if (!fast) armWatchdog(q);
+  try { await deliver(payload ? q : out, payload); }
+  catch (e) { setWorking(null); push(h(`<div class="awe-msg"><p>Something went wrong reaching the agent. Try again in a moment.</p></div>`)); console.warn('[awe]', e); }
+}
+
+/* watchdog: if no reply arrives in 40 s (service down, model error, disabled bot), say so and offer a retry in a fresh session */
+function armWatchdog(q) {
+  clearTimeout(st.wd); st.wdQ = q;
+  st.wd = setTimeout(() => {
+    setWorking(null);
+    push(h(`<div class="awe-msg"><p>${esc(T.slow)}</p></div>`));
+    repliesEl.innerHTML = `<button type="button" class="awe-chip" data-awe-retry>${esc(T.retry)}</button>`;
+    emit('agent_timeout', ENTRY.demo);
+  }, 40000);
+}
+async function retryLast() {
+  const q = st.wdQ; if (!q) return;
+  repliesEl.innerHTML = ''; st.restarted = true; await restartSession(); st.ctxSent = true;
+  setWorking(T.theSite); armWatchdog(q);
+  try { await deliver(contextLine() + '\n\n' + q); } catch (e) { console.warn('[awe]', e); }
+}
+/* ---------- receiving ---------- */
+function onMsg(m) {
+  const ts = m.timestamp ? (m.timestamp > 1e12 ? m.timestamp : m.timestamp * 1000) : Date.now();
+  if (ts < st.t0 - 5000) return;
+  if (m.author_type === 'user') return;
+  const ex = m.extra || {}; const bid = String(ex.id || '').replace(/_\d+$/, '');
+  if (!st.greeted && m.type === 'dialog' && !ex.is_ai_agent_message) {
+    st.greeted = true; st.greetBtns = (m.buttons || []).map((t, i) => ({ text: t, payload: (m.payloads || [])[i] }));
+    if (st._greet) st._greet();
+    return;
+  }
+  clearTimeout(st.wd);   // a real reply (not the flow's greeting) cancels the watchdog
+  st.chain = (st.chain || Promise.resolve()).then(async () => {
+    const before = thread.children.length;
+    await handleMsg(m, ex, bid);
+    if (!st.open && thread.children.length > before) setUnread((st.unread || 0) + 1);
+  }).then(() => keepFocus()).catch((e) => console.warn('[awe]', e));
+}
+async function handleMsg(m, ex, bid) {
+  setWorking(null);
+  const text = m.message || m.title || '';
+  if (m.type === 'dialog' && (m.buttons || []).length && !ex.is_ai_agent_message) st.flowBtns = m.buttons.map((t, i) => ({ text: t, payload: (m.payloads || [])[i] }));
+  if (st.fastBook) {   // the booking card is already on screen
+    if (bid === 'sales_book') { fastEnd(false); if (!thread.querySelector('.awe-book')) bookCard(); return; }
+    /* anything else (a late answer to an earlier question, the agent's error when two messages cross) is not shown: the visitor already has the card.
+       The routing gets 8 s more; if it never comes, reroute() runs before any booking button. */
+    clearTimeout(st.fastT); st.fastT = setTimeout(() => fastEnd(true), 8000);
+    return;
+  }
+  if (bid === 'team_email') { emailCard(); return; }
+  if (bid === 'team_done') { receipts(); return; }
+  if (bid === 'sales_book') { if (st.salesMissed) { st.salesMissed = false; const c = [...thread.querySelectorAll('.awe-book')].pop(); if (c && !c.querySelector('.awe-receipt')) return; } bookCard(); return; }
+  if (bid === 'sales_booked') { await agentText(T.bookedMsg); return; }
+  if (bid === 'support_route') { supportCard(); return; }
+  if (bid === 'team_more') { repliesEl.innerHTML = `<button type="button" class="awe-chip" data-awe-say="${esc(T.oneMore)}" data-awe-payload="$0">${esc(T.oneMore)}</button>`; return; }
+  if (m.type === 'dialog' && (m.buttons || []).length) {
+    st.lastBtns = m.buttons;
+    const labels = new Set(m.buttons.map((b) => String(b).trim().toLowerCase()));
+    const clean = text.split(/\n/).filter((l) => !labels.has(l.replace(/^[-•*\d.)\s]+/, '').trim().toLowerCase())).join('\n').trim();
+    if (clean) { await agentText(clean); st.answers++; }
+    repliesEl.innerHTML = m.buttons.map((b) => `<button type="button" class="awe-chip" data-awe-say="${esc(b)}">${esc(b)}</button>`).join('');
+    maybePlan(ex);
+    if (clean && !m.buttons.some((b) => /demo|call|llamada|ligação/i.test(b))) decide(clean, true);   // the card still offers the demo when the agent's buttons don't
+    return;
+  }
+  if (text) { await agentText(text); st.answers++; maybePlan(ex); decide(text); }
+}
+function md(src) {
+  src = src.replace(/(?:\[[^\]]*\]\()?(?:[^\n:]{0,40}?→\s*:?\s*)?(https:\/\/app\.landbot\.io\/sign-?up\/?(?:[^\s)]*[^\s).,;:])?)\)?/g, (_, u) => `[${T.build}](${u})`);
+  const inline = (s) => esc(s)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, t, u) => `<a href="${tagUrl(u.replace(/&amp;/g, '&')).replace(/&/g, '&amp;')}" target="_blank" rel="noopener">${t}</a>`)
+    .replace(/(^|[\s(*])(https?:\/\/[^\s<)*]+)/g, (_, pre, u) => { const clean = u.replace(/[.,;:]+$/, ''), tail = u.slice(clean.length); return `${pre}<a href="${tagUrl(clean.replace(/&amp;/g, '&')).replace(/&/g, '&amp;')}" target="_blank" rel="noopener">${clean}</a>${tail}`; })
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|\s)\*([^*\s][^*]*)\*(?=\s|$)/g, '$1<i>$2</i>');
+  return src.split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => `<p>${inline(l)}</p>`).join('');
+}
+function splitSources(text) {
+  const src = []; const keep = [];
+  for (const line of text.split(/\n/)) { const mm = line.replace(/[*_]/g, '').match(/^\s*(sources?|fuentes?|fontes?)\s*:\s*(.+)$/i); if (mm) src.push(mm[2]); else keep.push(line); }
+  return { body: keep.join('\n').trim(), src: src.join(' · ') };
+}
+function sourceChips(s) {   // no longer drawn under replies (Fabo, 17-nov-2026: the "LANDBOT.IO Home" chip added nothing); kept for reference
+  if (!s) return '';
+  const chips = []; const seen = new Set();
+  for (const part of s.split(/\s*[·,]\s*/)) for (const [re, id] of SRC_MAP) if (re.test(part) && !seen.has(id)) {
+    seen.add(id);
+    if (id === 'pricing') chips.push(`<a href="${location.origin.includes('landbot.io') ? '' : 'https://landbot.io'}/pricing" target="_blank" rel="noopener"><em>${T.fromSite}</em>Pricing</a>`);
+    else { const sec = SECTIONS.find((x) => x[0] === id); chips.push(`<button type="button" data-awe-point="${id}"><em>${T.fromSite}</em>${esc(sec[2][LANG])}</button>`); }
+    break;
+  }
+  return chips.length ? `<div class="awe-src">${chips.join('')}</div>` : '';
+}
+let actx = null, lastDing = 0;
+const unlockAudio = () => { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {} };
+['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, unlockAudio, { passive: true }));
+function ding() {
+  if (!actx || actx.state !== 'running' || Date.now() - lastDing < 800) return;
+  lastDing = Date.now(); const t = actx.currentTime;
+  [[880, 0], [1318.5, 0.09]].forEach(([f, dt]) => { const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t + dt); g.gain.linearRampToValueAtTime(0.12, t + dt + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.35);
+    o.connect(g).connect(actx.destination); o.start(t + dt); o.stop(t + dt + 0.4); });
+}
+function flowCard(lines) {
+  st.items.add('sketch');
+  return h(`<div class="awe-card awe-flow"><span class="awe-tag">${esc(T.sketchH)}</span>
+    <ol class="awe-steps">${lines.map((l, i) => `<li><span>${i + 1}</span>${esc(l.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, ''))}</li>`).join('')}</ol></div>`);
+}
+function promptCard(code) {
+  st.items.add('prompt');
+  const card = h(`<div class="awe-card awe-prompt"><span class="awe-tag">${esc(T.promptH)}</span>
+    <pre class="awe-code"></pre><div class="awe-prompt-f"><span class="awe-sub">${esc(T.promptSub)}</span><button type="button" class="awe-chip" data-awe-copy>${esc(T.copy)}</button></div></div>`);
+  card.querySelector('pre').textContent = code.trim();
+  return card;
+}
+/* ---------- AI agent templates: the agent writes [[TEMPLATE:t13]], the page draws the template as a phone mockup;
+   a tap opens the live template full screen in a new tab, never inside the chat (Fabo, 10-nov-2026). On landbot.io the catalogue is read live from
+   /ai-agent-templates, so a removed template is never shown; TPL_FALLBACK is the 10-nov copy for anywhere else.
+   Voice templates are left out for now (Fabo, 10-nov-2026). ---------- */
+const TPL_FALLBACK = [{"id":"t01","t":"WhatsApp sales assistant","c":"Lead generation","d":"Qualify car buyers by budget inside a familiar WhatsApp-style chat.","gain":"Sales only talks to buyers with a real budget and intent","u":"https://landbot.pro/v3/H-3514728-BX6Q6HCOMGIG6RS3/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e8e25951a4f2d227206_6abd6e10c633498e89ddffe4_tg-live01.jpeg"},{"id":"t02","t":"Payroll advance onboarding","c":"Onboarding & forms","d":"A fintech flow that turns a long form into one confident decision.","gain":"More activated users in the first session","u":"https://landbot.pro/v3/H-3516185-76ORG9MIIYQPFYSU/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e8e25951a4f2d227258_6abd6e1144ad8d014d9f754a_tg-live02.jpeg"},{"id":"t03","t":"Job application stepper","c":"Onboarding & forms","d":"Collect candidate details step by step, with progress and time left.","gain":"Fewer drop-offs and less manual screening","u":"https://landbot.pro/v3/H-3516157-6L93GIJIEO7V2GUQ/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e8f25951a4f2d2272bd_6abd6e111a760de625e2ee36_tg-live03.jpeg"},{"id":"t04","t":"Flight booking stepper","c":"Booking","d":"Airline-style tabs for where, when, who and pay.","gain":"Higher booking completion on mobile","u":"https://landbot.pro/v3/H-3516162-ZKX809OOMBOZ9QTE/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e8f25951a4f2d2272ed_6abd6e1150f000e04b327c59_tg-live04.jpeg"},{"id":"t05","t":"Gamified lesson","c":"Engagement","d":"A quiz with streaks, XP and instant feedback on every answer.","gain":"More completed lessons and longer streaks","u":"https://landbot.pro/v3/H-3513672-YEY9C2IJRZ8GWMDY/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e8f25951a4f2d227312_6abd6e1133b4373e57458b0f_tg-live05.jpeg"},{"id":"t06","t":"Personality quiz result","c":"Lead generation","d":"A shareable result card that turns quiz answers into a lead magnet.","gain":"Leads arrive segmented by profile, ready for nurturing","u":"https://landbot.pro/v3/H-3516146-100HWB7OBBE7NZJN/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e8f25951a4f2d227341_6abd6e124ec38ac37570ea09_tg-live06.jpeg"},{"id":"t07","t":"Choose-your-own-adventure","c":"Engagement","d":"Branching story chapters where every button is a choice.","gain":"Longer sessions and more brand recall","u":"https://landbot.pro/v3/H-3516220-N8VD6WKOL8JOGLBQ/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e9025951a4f2d227351_6abd6e1290fcdcbbf5c7f4eb_tg-live07.jpeg"},{"id":"t08","t":"Retro terminal plan picker","c":"Lead generation","d":"A command-line flow that recommends a plan to technical buyers.","gain":"Faster self-serve plan selection","u":"https://landbot.pro/v3/H-3516229-G39U5YH2ATTARKPP/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e9025951a4f2d227390_6abd6e124ec38ac37570eade_tg-live08.jpeg"},{"id":"t09","t":"Product configurator","c":"E-commerce","d":"Choose trim and colour with a running price summary.","gain":"Higher-value orders with fewer abandoned builds","u":"https://landbot.pro/v3/H-3514134-V0E3711UHWFANDQM/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e9025951a4f2d22739c_6abd6e1325951a4f2d2216a3_tg-live09.jpeg"},{"id":"t10","t":"Food ordering menu","c":"E-commerce","d":"Browse dishes by category and build a cart in the chat.","gain":"Faster orders and bigger baskets","u":"https://landbot.pro/v3/H-3516187-7RC1DBU60T5YKLYT/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6e9125951a4f2d2273a5_6abd6e134ec38ac37570eb25_tg-live10.jpeg"},{"id":"t11","t":"Insurance quote","c":"Onboarding & forms","d":"A 90-second quote flow led by a friendly assistant.","gain":"More quotes started and finished","u":"https://landbot.pro/v3/H-3516133-T5KS146P4NKRFXVN/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb253f966c94928adc9_6abd6e13cbe11adea2af6f28_tg-live11.jpeg"},{"id":"t12","t":"Year-in-review story","c":"Engagement","d":"Wrapped-style slides that recap a year of conversations.","gain":"More shares and return visits","u":"https://landbot.pro/v3/H-3516208-R4Y38WBZ7T7ZTO2Z/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb353f966c94928ade0_6abd6e14c406fe406fe5eb6d_tg-live12.jpeg"},{"id":"t13","t":"Demo booking","c":"Booking","d":"Qualify the lead, then offer calendar slots in the same flow.","gain":"Fewer no-shows and a calendar full of qualified calls","u":"https://landbot.pro/v3/H-3517943-AJ7TOHVPHQJEWXHY/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb453f966c94928adfb_6abd6e15941772043e59d07d_tg-live13.jpeg"},{"id":"t14","t":"Bot-to-human handoff","c":"Support & feedback","d":"Pass the chat to a person with the context already shared.","gain":"Shorter resolution time and happier customers","u":"https://landbot.pro/v3/H-3517955-1I10TFZYN1KVK5S3/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb453f966c94928ae1f_6abd6e156d9b4e5714e31e5e_tg-live14.jpeg"},{"id":"t15","t":"Property viewing finder","c":"Booking","d":"Match listings to filters and book a viewing.","gain":"More viewings booked per enquiry","u":"https://landbot.pro/v3/H-3517957-9NEVALIKU1YSBJ2D/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb453f966c94928ae28_6abd6e15c1e37eb1fc50860e_tg-live15.jpeg"},{"id":"t16","t":"Exit-intent lead magnet","c":"Lead generation","d":"A popup that trades a free report for three quick answers.","gain":"More leads from traffic you already have","u":"https://landbot.pro/v3/H-3517953-6FMKHVMZGWEK2LS8/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb553f966c94928ae2d_6abd6e16f6d4dbbaec1eb24f_tg-live16.jpeg"},{"id":"t17","t":"Order tracking","c":"E-commerce","d":"Live delivery status with options to reroute the parcel.","gain":"Fewer \"where is my order\" contacts","u":"https://landbot.pro/v3/H-3517947-BR31AMEDVHR5UGKQ/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb553f966c94928ae32_6abd6e16c1e37eb1fc50865d_tg-live17.jpeg"},{"id":"t18","t":"Returns: swap before refund","c":"E-commerce","d":"Offer an exchange before processing a refund.","gain":"More exchanges, fewer refunds","u":"https://landbot.pro/v3/H-3517951-DR0X1YWLK206N08B/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb553f966c94928ae4e_6abd6e1639ce356d3c4644e1_tg-live18.jpeg"},{"id":"t19","t":"Appointment reminder","c":"Booking","d":"Confirm, reschedule or release a clinic slot.","gain":"Fewer empty slots and less admin time","u":"https://landbot.pro/v3/H-3517959-2JIC8ALNT2V96OXD/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb553f966c94928ae75_6abd6e17b32be2e084345ba7_tg-live19.jpeg"},{"id":"t20","t":"NPS survey with routing","c":"Support & feedback","d":"Score, follow-up question and smart routing by answer.","gain":"More reviews from promoters, faster recovery for detractors","u":"https://landbot.pro/v3/H-3517945-X8NTBLHB8POF3GTH/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6abd6eb653f966c94928aea0_6abd6e174b593f67e68edeed_tg-live20.jpeg"},{"id":"t21","t":"Guided troubleshooting","c":"Support & feedback","d":"Step-by-step diagnosis with photos or screenshots, ending in a fix.","gain":"Fewer tickets and faster resolution","u":"https://landbot.pro/v3/H-3548027-8C9DE2W6VBBKOY45/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace701099_6aeb1889a98b779d963cdad8_tg-live21-m1104.jpeg"},{"id":"t22","t":"Post-purchase CSAT","c":"Support & feedback","d":"Star rating, a reason in chips and an offer that fits the answer.","gain":"More responses and a recovery path for unhappy buyers","u":"https://landbot.pro/v3/H-3547744-SV1JKKR0G5CVCPFF/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace70109e_6aeb1889a98b779d963cdaee_tg-live22-m1104.jpeg"},{"id":"t23","t":"ROI calculator","c":"Lead generation","d":"Sliders show savings live, then send the full report by email.","gain":"Leads arrive with a quantified business case","u":"https://landbot.pro/v3/H-3547954-0YNRZD0IT5OBB92P/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010a1_6aeb1889fb0c1373cdc5edb5_tg-live23-m1104.jpeg"},{"id":"t24","t":"Webinar registration","c":"Lead generation","d":"Pick a session, register and get a WhatsApp reminder.","gain":"Higher attendance rate","u":"https://landbot.pro/v3/H-3547888-5508BJ70Y0YT4Y66/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010a5_6aeb1889a98b779d963cdb1c_tg-live24-m1104.jpeg"},{"id":"t25","t":"Product finder","c":"E-commerce","d":"Four questions, three recommended products, add to cart in chat.","gain":"Higher conversion and fewer returns","u":"https://landbot.pro/v3/H-3531099-J5JPEGMRPDEYNU9Q/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010a8_6aeb18895c028aa281eef091_tg-live25-m1104.jpeg"},{"id":"t26","t":"Abandoned cart recovery","c":"E-commerce","d":"A WhatsApp nudge that answers the doubt and applies a discount.","gain":"More recovered revenue","u":"https://landbot.pro/v3/H-3529433-YL5JL38C9QSBK4H3/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010ad_6aeb1889600e9efcaebbfa86_tg-live26-m1104.jpeg"},{"id":"t27","t":"Identity verification (KYC)","c":"Onboarding & forms","d":"Upload an ID, take a selfie and follow the verification status.","gain":"More verified users, fewer abandoned sign-ups","u":"https://landbot.pro/v3/H-3548024-J09NIVY4GYUPVPE3/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010b0_6aeb188a9ad3607145a40eef_tg-live27-m1104.jpeg"},{"id":"t28","t":"Loan and mortgage pre-qualification","c":"Onboarding & forms","d":"A repayment simulator and pre-qualification in two minutes.","gain":"Advisers spend time on applicants who qualify","u":"https://landbot.pro/v3/H-3547948-WTS0G80OQQI0C69Z/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010b4_6aeb188a9ad3607145a40f05_tg-live28-m1104.jpeg"},{"id":"t29","t":"Restaurant reservation","c":"Booking","d":"Guests, day, time and special requests, with easy changes.","gain":"More covers and fewer no-shows","u":"https://landbot.pro/v3/H-3547924-1NHL2P3KLPPU6NYX/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010b9_6aeb188a895194198a1a8f16_tg-live29-m1104.jpeg"},{"id":"t30","t":"SaaS product onboarding","c":"Engagement","d":"An in-chat checklist that guides the first three steps in the app.","gain":"Higher activation and retention","u":"https://landbot.pro/v3/H-3547967-7T69GP4TOQO1JZ58/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010be_6aeb188aa47d2fdf8a385ec5_tg-live30-m1104.jpeg"},{"id":"t37","t":"AI sales agent with catalogue","c":"AI actions","d":"Answers free-text product and pricing questions and sends a payment link in chat.","gain":"Shorter path from question to payment","u":"https://landbot.pro/v3/H-3529544-FD1GQ6J4UM5O6E90/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010c1_6aeb188a4934472eac80bcc5_tg-live37-m1104.jpeg"},{"id":"t38","t":"CRM-filling agent","c":"AI actions","d":"Extracts data from the conversation and shows the CRM record being created live.","gain":"Complete CRM records and no copy-paste","u":"https://landbot.pro/v3/H-3536086-JEDH23KQ9KDG1D48/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeada1f5c14a29d3b6ad6bd_6aeada0d7fb584b1a794fd28_tg-live38.jpeg"},{"id":"t39","t":"Document agent","c":"AI actions","d":"Upload a policy or contract, ask questions and see what is missing.","gain":"Fewer support calls and faster decisions","u":"https://landbot.pro/v3/H-3548032-GQUA8P0GJZ63ZFV3/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010ce_6aeb188a4934472eac80bcdb_tg-live39-m1104.jpeg"},{"id":"t40","t":"Instant quote builder","c":"AI actions","d":"Describe the project by text or voice and get an itemised quote to accept or adjust.","gain":"More quotes accepted on the first visit","u":"https://landbot.pro/v3/H-3548010-0JOMGI0L6CQ2K79E/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010d3_6aeb188cd9a904760c6020cf_tg-live40-m1104.jpeg"},{"id":"t41","t":"Instagram DM lead capture","c":"Channels","d":"Replies to comments and stories, then qualifies in the DM.","gain":"Leads from comments and stories you already get","u":"https://landbot.pro/v3/H-3548034-2UAYIA1D8WY0SVSP/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010da_6aeb188c5c55f35366450214_tg-live41-m1104.jpeg"},{"id":"t42","t":"Click-to-WhatsApp ad","c":"Channels","d":"An ad that opens a WhatsApp conversation with the offer already loaded.","gain":"Lower cost per lead than a landing page form","u":"https://landbot.pro/v3/H-3547975-WVHUMSAHJBSU0VL2/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010e5_6aeb188d5c55f35366450240_tg-live42-m1104.jpeg"},{"id":"t43","t":"In-store QR agent","c":"Channels","d":"Scan in store or at an event and get an offer, registration or prize draw.","gain":"Measurable leads from stores and events","u":"https://landbot.pro/v3/H-3531053-UXZGZFXEQQ3OLNSN/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aea0570ab61255ed2982e53_6aea0549bb494abf198b52d2_tg-live43.jpeg"},{"id":"t44","t":"Email-embedded agent","c":"Channels","d":"Answer one question from the email and continue the conversation on the web.","gain":"Higher engagement from existing campaigns","u":"https://landbot.pro/v3/H-3547997-PJ8TAINGSFWNAA9N/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010e8_6aeb188e78e9322e15ed2a07_tg-live44-m1104.jpeg"},{"id":"t45","t":"Plan recommender","c":"Lead generation","d":"Three questions, then the pricing table reordered with the best plan highlighted.","gain":"More self-serve upgrades and fewer wrong plans","u":"https://landbot.pro/v3/H-3547774-417G98T9740LE67S/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb25385424a08a218e4adf_6aeb252490d703db160ba4c1_tg-live45-c1104.jpeg"},{"id":"t46","t":"Maturity scorecard","c":"Lead generation","d":"Questions by area and a scored report with next steps.","gain":"Leads get value up front and sales gets context","u":"https://landbot.pro/v3/H-3547767-T4D2S08UCJ4U61OW/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aeb18f582994e3ace7010f4_6aeb188f4934472eac80be48_tg-live46-m1104.jpeg"},{"id":"t47","t":"Post-purchase upsell","c":"E-commerce","d":"After checkout, offers the add-on that fits the order in one tap.","gain":"Higher average order value","u":"https://landbot.pro/v3/H-3531051-TFAOW4V8NFKP7EB5/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6ae9cca58396f0f75132a1b6_6ae9cc8ce04905a282117157_tg-live47.jpeg"},{"id":"t48","t":"Cancellation save flow","c":"Retention","d":"Asks why and offers a pause, discount or plan change before cancelling.","gain":"Lower churn","u":"https://landbot.pro/v3/H-3530838-2S5RGHP9LY50TM81/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6ad7aa62fa082ec0574a13ed_6ad7a4890dae4d3e4fe1f309_tg-live48.jpeg"},{"id":"t49","t":"Renewal and reactivation","c":"Retention","d":"Flags the renewal date, sums up the value delivered and renews in chat.","gain":"Higher renewal and reactivation rates","u":"https://landbot.pro/v3/H-3536084-PF6P49DT00RKBWOP/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aead879bb521a2a159e3c36_6aead8695c14a29d3b6a235b_tg-live49.jpeg"},{"id":"t50","t":"Referral agent","c":"Retention","d":"After a positive moment, creates a referral link and helps share it.","gain":"More referred sign-ups","u":"https://landbot.pro/v3/H-3547806-GVC6ZHPMD7ZWQO14/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aea2a3fbbaf2e9510b1de4b_6aea2a23e849356564b2abf8_tg-live50.jpeg"},{"id":"t51","t":"Life cover calculator","c":"Lead generation","d":"Family, debts and income in, the right cover amount out, then an adviser callback.","gain":"Leads arrive with a cover amount and a reason to talk","u":"https://landbot.pro/v3/H-3547822-35ZW1SVJ0INFLAO7/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aea31419bd2ae30c21ff1d2_6aea312cacf3580ac37bf325_tg-live51.jpeg"},{"id":"t52","t":"Income protection check","c":"Lead generation","d":"Shows the self-employed how many months they are covered if they stop working.","gain":"More conversations with an under-served segment","u":"https://landbot.pro/v3/H-3530920-2TEB0L3CWDD541K1/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6ad797e66154bc08a751e90f_6ad797c13746abf2f11583de_tg-live52.jpeg"},{"id":"t53","t":"Mortgage affordability","c":"Lead generation","d":"How much can I borrow, what the monthly payment is and a broker who calls back.","gain":"Pre-qualified leads with budget, deposit and timing","u":"https://landbot.pro/v3/H-3547877-LFTBTWQXF4YUA0FQ/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aea3b23d58d70751ea08056_6aea3b0ed58d70751ea07714_tg-live53.jpeg"},{"id":"t54","t":"Retirement gap simulator","c":"Lead generation","d":"Projects retirement income against the target and suggests a monthly saving.","gain":"Leads that already understand their gap","u":"https://landbot.pro/v3/H-3530836-PD8MGIGHHMD862ZW/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6ad797e66154bc08a751e90c_6ad797c13c79c9f05a3a3ee8_tg-live54.jpeg"},{"id":"t55","t":"Debt consolidation simulator","c":"Lead generation","d":"Combines current loans into one payment and shows the monthly saving.","gain":"Higher-intent applications with loan details already captured","u":"https://landbot.pro/v3/H-3529668-8VO9FCCFB5GJ40MG/index.html","img":"https://cdn.prod.website-files.com/5e42772e6a8cfd42a9715206/6aea059434cf054ae0bd128c_6aea0579db92a04a712e8e03_tg-live55.jpeg"}];
+const TPL_PAGE = 'https://landbot.io/ai-agent-templates';
+let tplCat = null;
+const tplId = (v) => { const n = parseInt(String(v).replace(/\D/g, ''), 10); return n ? 't' + String(n).padStart(2, '0') : ''; };
+function tplLoad() {
+  if (tplCat) return tplCat;
+  tplCat = (async () => {
+    if (!/(^|\.)landbot\.io$/.test(location.hostname)) return TPL_FALLBACK;
+    try {
+      const r = await fetch('/ai-agent-templates', { credentials: 'omit' }); if (!r.ok) return TPL_FALLBACK;
+      const doc = new DOMParser().parseFromString(await r.text(), 'text/html'), tx = (el) => (el ? el.textContent.replace(/\s+/g, ' ').trim() : '');
+      const live = [...doc.querySelectorAll('.tg-card[data-url]')].filter((c) => c.dataset.voice !== 'true' && /landbot\.pro\//.test(c.dataset.url))
+        .map((c) => ({ id: c.dataset.slug, t: tx(c.querySelector('.tg-card-title, h3')), c: c.dataset.cat || '', d: tx(c.querySelector('.tg-card-desc, p')), gain: c.dataset.gain || '', u: c.dataset.url, img: (c.querySelector('img') || { getAttribute: () => '' }).getAttribute('src') || '' }))
+        .filter((x) => x.id && x.t && x.u);
+      return live.length >= 10 ? live : TPL_FALLBACK;
+    } catch (_) { return TPL_FALLBACK; }
+  })();
+  return tplCat;
+}
+async function templateCards(ids, more = true, after = null) {
+  const cat = await tplLoad(), g = st.gen;
+  for (const id of ids) {
+    if (g !== st.gen) return;
+    const x = cat.find((c) => c.id === id); if (!x) continue;
+    st.items.add('template ' + x.t);
+    const card = h(`<div class="awe-card awe-tpl" data-awe-tplid="${esc(x.id)}" data-awe-tplurl="${esc(x.u)}"><span class="awe-tag">${esc(T.tplH)} · ${esc(x.c)}</span>
+      <div class="awe-tpl-row"><a class="awe-tpl-shot awe-phone" href="${esc(x.u)}" target="_blank" rel="noopener" data-awe-tplfull="${esc(x.id)}" aria-label="${esc(T.tplTry)}: ${esc(x.t)}">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : ''}<span>↗</span></a>
+      <div class="awe-tpl-info"><div class="awe-tpl-t">${esc(x.t)}</div><div class="awe-sub">${esc(x.d)}</div>
+      ${x.gain ? `<div class="awe-why"><b>${esc(T.tplGain)}:</b> ${esc(x.gain)}</div>` : ''}</div></div>
+      <div class="awe-tpl-f"><a class="awe-chip" href="${esc(x.u)}" target="_blank" rel="noopener" data-awe-tplfull="${esc(x.id)}">${esc(T.tplTry)} ↗</a>${more ? `<a class="awe-chip" href="${TPL_PAGE}" target="_blank" rel="noopener">${esc(T.tplMore)} ↗</a>` : ''}</div></div>`);
+    if (after && after.isConnected) { after.after(card); after = card; } else push(card);   // from the strip: the card opens right under it
+    emit('entry_point_view', ENTRY.signup, { action: 'template_card', template: x.id });
+  }
+}
+/* after the prompt card: three templates that fit the case, as phone mockups; a tap opens the live template full screen in a new tab (10-nov-2026) */
+const TPL_PICKS = [
+  [/whatsapp/i, ['t11', 't42', 't10']],
+  [/shop|store|e-?commerce|cart|order|tienda|carrito|pedido|loja|carrinho/i, ['t25', 't10', 't17']],
+  [/support|soporte|suporte|ticket|help ?desk|faq|atenci/i, ['t21', 't14', 't20']],
+  [/appointment|reservation|reserva|\bcitas?\b|clinic|cl[ií]nica|dentist|restaurant|hotel|sal[oó]n/i, ['t19', 't29', 't13']],
+  [/real estate|propert|inmobili|imobili|piso|apartment/i, ['t15', 't53', 't13']],
+  [/insur|seguro|mortgage|hipotec|loan|pr[eé]stamo|bank|banco|financ/i, ['t11', 't53', 't28']],
+  [/onboard|sign-?up|registro|cadastro|saas/i, ['t30', 't02', 't45']],
+  [/lead|sdr|qualif|cualific|demo|sales|ventas|vendas/i, ['t13', 't23', 't16']]];
+async function tplStrip(code) {
+  const f = st.facts, K = { wa: 'whatsapp', both: 'whatsapp', support: 'support', leads: 'lead' };
+  const hay = [st.lastQ || '', code, f.use ? K[f.use.k] || '' : '', f.chan ? K[f.chan.k] || '' : ''].join(' ');   // what the visitor said first, then the prompt
+  const pick = st.tplForce || (TPL_PICKS.find(([re]) => re.test(hay)) || [null, ['t13', 't23', 't46']])[1];
+  const cat = await tplLoad(), xs = pick.map((id) => cat.find((c) => c.id === id)).filter(Boolean);
+  if (xs.length < 2) return;
+  push(h(`<div class="awe-card awe-tplstrip"><span class="awe-tag">${esc(T.stripH)}</span><div class="awe-sub" style="margin-top:0">${esc(T.stripSub)}</div>
+    <div class="awe-tplrow">${xs.map((x) => `<a class="awe-tplmini" href="${esc(x.u)}" target="_blank" rel="noopener" data-awe-tplfull="${esc(x.id)}" aria-label="${esc(T.tplTry)}: ${esc(x.t)}"><span class="awe-phone">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : ''}</span><b>${esc(x.t)}</b></a>`).join('')}</div>
+    <div class="awe-tpl-f"><a class="awe-chip" href="${TPL_PAGE}" target="_blank" rel="noopener">${esc(T.tplMore)} ↗</a></div></div>`));
+  emit('entry_point_view', ENTRY.signup, { action: 'template_strip', templates: xs.map((x) => x.id).join(',') });
+}
+/* ---------- blog post card: when a reply links a landbot.io blog post, the page shows it as a card with its cover image
+   (Fabo, 10-nov-2026). On landbot.io the title, description and og:image are read from the post itself; elsewhere the
+   card falls back to the link text. One card per reply. ---------- */
+const BLOG_RX = /^https:\/\/landbot\.io\/(?:(?:es|pt-br)\/)?blog\/[^/?#]+\/?$/;
+const blogMeta = {};
+async function blogInfo(u, fallback) {
+  if (blogMeta[u]) return blogMeta[u];
+  const slug = u.replace(/\/$/, '').split('/').pop().replace(/-/g, ' ');
+  let m = { t: /^https?:/.test(fallback) || !fallback ? slug.charAt(0).toUpperCase() + slug.slice(1) : fallback, d: '', img: '' };
+  if (/(^|\.)landbot\.io$/.test(location.hostname)) {
+    try {
+      const r = await fetch(new URL(u).pathname, { credentials: 'omit' });
+      if (r.ok) {
+        const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+        const meta = (k) => ((doc.querySelector(`meta[property="${k}"]`) || doc.querySelector(`meta[name="${k}"]`) || {}).content || '').trim();
+        let ld = '';   // blog v2 posts carry the cover in JSON-LD and as .blog-image-hero, not always as og:image
+        for (const sc of doc.querySelectorAll('script[type="application/ld+json"]')) { try { const j = JSON.parse(sc.textContent); for (const x of [].concat(j['@graph'] || j)) { const im = x && x.image; const v = im && (im.url || (Array.isArray(im) ? im[0] : im)); if (typeof v === 'string') { ld = v; break; } } } catch (_) {} if (ld) break; }
+        const hero = doc.querySelector('img.blog-image-hero');
+        m = { t: meta('og:title').replace(/\s*[|—–-]\s*Landbot\s*$/i, '') || m.t, d: meta('og:description') || meta('description'), img: meta('og:image') || meta('twitter:image') || ld || (hero ? hero.getAttribute('src') : '') };
+      }
+    } catch (_) {}
+  }
+  return (blogMeta[u] = m);
+}
+async function blogCard(bubble) {
+  if (!bubble || st.blogShown === (st.userSeq || 0)) return;   // one card per reply
+  const a = [...bubble.querySelectorAll('a[href]')].find((x) => BLOG_RX.test(x.href.split(/[?#]/)[0])); if (!a) return;
+  st.blogShown = st.userSeq || 0;
+  const u = a.href.split(/[?#]/)[0], m = await blogInfo(u, a.textContent.trim());
+  if (!bubble.isConnected) return;
+  const bare = /^https?:\/\/\S+$/.test(bubble.textContent.trim());   // a bubble that is only the URL: the card takes its place
+  bubble[bare ? 'replaceWith' : 'after'](h(`<a class="awe-card awe-blog" href="${esc(a.href)}" target="_blank" rel="noopener" data-awe-blog="${esc(u)}">${m.img ? `<img src="${esc(m.img)}" alt="" loading="lazy">` : ''}<div class="awe-blog-b"><span class="awe-tag">${esc(T.blogH)}</span><div class="awe-blog-t">${esc(m.t)}</div>${m.d ? `<div class="awe-sub">${esc(m.d)}</div>` : ''}<span class="awe-blog-go">${esc(T.blogGo)} ↗</span></div></a>`));
+  emit('entry_point_view', ENTRY.signup, { action: 'blog_card', post: u });
+}
+const FIELD_LINE = /^\s*[*_`]*\s*([a-z]+(_[a-z]+)+|channel|urgency|comparing|subsource|source)\s*[*_`]*\s*[:=]/i;   // any snake_case field name, not only the ones listed when it was written
+async function agentText(text) {
+  text = String(text).split(/\n/).filter((l) => !FIELD_LINE.test(l)).join('\n');   // a field the agent saves must never be shown to the visitor
+  const tpls = []; text = text.replace(/\[\[\s*TEMPLATE\s*:\s*([^\]\s]+)\s*\]\]/gi, (_, v) => { const id = tplId(v); if (!id || tpls.includes(id) || tpls.length >= 2) return ''; tpls.push(id); return '\n§T' + id + '\n'; });   // the card goes where the agent put it
+  const g = st.gen;   // a reply from a session that was restarted stops drawing
+  const { body: raw, src } = splitSources(text);
+  const blocks = [];   // fenced blocks the agent writes: ```flow (sketch) and ```prompt (for a coding agent)
+  /* Landbot strips backticks, so the agent marks blocks as [[FLOW]]…[[/FLOW]] and [[PROMPT]]…[[/PROMPT]] (``` kept as a fallback) */
+  const body = raw
+    .replace(/\[\[\s*(FLOW|PROMPT)\s*\]\]([\s\S]*?)(?:\[\[\s*\/\s*\1\s*\]\]|$)/gi, (_, kind, code) => { blocks.push({ kind: kind.toLowerCase(), code }); return '\n§§' + (blocks.length - 1) + '\n'; })
+    .replace(/```\s*(flow|prompt)?[^\n]*\n([\s\S]*?)```/gi, (_, kind, code) => { blocks.push({ kind: (kind || 'prompt').toLowerCase(), code }); return '\n§§' + (blocks.length - 1) + '\n'; });
+  const parts = [];   // a numbered or bulleted list stays in ONE bubble; every other line is its own bubble
+  const LINES = body.split(/\n/).map((x) => x.trim()).filter(Boolean), ITEM = /^(?:\d+[.)]|[-•*])\s+/;
+  LINES.forEach((l, j) => {
+    const isItem = ITEM.test(l), prev = parts[parts.length - 1], nextItem = ITEM.test(LINES[j + 1] || '');
+    if (prev && prev.list && (isItem || (nextItem && !/^§/.test(l)))) prev.lines.push(l);   // a step's own explanation line stays with it
+    else parts.push({ list: isItem, lines: [l] });
+  });
+  for (let i = 0; i < parts.length; i++) parts[i] = parts[i].lines.join('\n');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* the whole reply is drawn, paced by typing dots (no "Continue" gate since 10-nov-2026: it hid the call offer at the end);
+     the scroll stops at the reply's first bubble, and a new message from the visitor drops the rest */
+  const seq = st.userSeq, live = () => g === st.gen && seq === st.userSeq;
+  st.anchor = null;
+  for (let i = 0; i < parts.length; i++) {
+    if (!live()) return;
+    if (i > 0 && !reduce) { const dots = push(h(thinkHTML(''))); await sleep(Math.min(1600, 450 + parts[i].length * 14)); dots.remove(); if (!live()) return; }
+    const tm = parts[i].match(/^§T(t\d+)$/);
+    if (tm) { await templateCards([tm[1]], !parts.slice(i + 1).some((x) => /^§T/.test(x))); if (i === 0) { st.anchor = thread.lastElementChild; ding(); } continue; }
+    const bm = parts[i].match(/^§§(\d+)$/);
+    if (bm) { const b = blocks[+bm[1]]; if (b.kind === 'prompt') continue;   // no copy-paste prompt card any more: templates instead (Fabo, 10-nov-2026)
+      const el = push(flowCard(b.code.split(/\n/).map((l) => l.trim()).filter(Boolean))); if (i === 0) { st.anchor = el; ding(); } continue; }
+    const el = push(h(`<div class="awe-msg">${md(parts[i])}</div>`));
+    if (i === 0) { st.anchor = el; ding(); }
+    await blogCard(el);
+  }
+  if (live() && /build-with-ai|\[\[\s*PROMPT/i.test(text) && !thread.querySelector('.awe-tplstrip')) await tplStrip(text);   // a Build with AI answer ends with three templates to start from
+  readAgent(text);
+  for (const part of src.split(/\s*[·,]\s*/)) for (const [re, id] of SRC_MAP) if (part && id !== 'pricing' && id !== 'hero' && re.test(part) && !st.cited.has(id)) { st.cited.add(id); pointAt(id); return; }
+}
+function pointAt(id) {
+  const el = secEl(id); if (!el) return;
+  document.querySelectorAll('.awe-point').forEach((n) => n.classList.remove('awe-point'));
+  el.dataset.aweLabel = T.pointLabel; el.classList.add('awe-point'); scrim.classList.add('lift');
+  if (window.innerWidth > 1180 || !st.open) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  clearTimeout(st._pt); st._pt = setTimeout(() => { el.classList.remove('awe-point'); scrim.classList.remove('lift'); }, 4500);
+}
+
+/* ---------- what I've understood (editable) ---------- */
+function parseVolume(q) {
+  if (!/(visit|lead|chat|conversa|messag|mensag|mensaj|month|mes|mês|tráfico|tráfego|traffic)/i.test(q)) return null;
+  const mm = q.match(/(\d{1,3}(?:[.,\s]\d{3})+|\d+(?:[.,]\d+)?)\s*(k|mil|thousand)?/i); if (!mm) return null;
+  let n = parseFloat(mm[1].replace(/[\s]/g, '').replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')); if (mm[2]) n *= 1000;
+  return n >= 50 ? n : null;
+}
+function parseSize(q) {
+  if (/under 10|menos de 10|less than 10|solo|freelance|just me|sólo yo|só eu/i.test(q)) return 5;
+  if (/\b10\s*[–-]\s*50\b/.test(q)) return 30; if (/\b51\s*[–-]\s*500\b/.test(q)) return 200; if (/500\s*\+|\+\s*500|more than 500|más de 500|mais de 500/i.test(q)) return 600;
+  const mm = q.match(/(\d{1,5})\s*[-‑ ]?\s*(people|persons|employees|staff|person|personas|empleados|pessoas|funcionários|colaboradores|agents?|agentes|team|equipo|time)/i);
+  return mm ? +mm[1] : null;
+}
+const USE_RX = [[/whatsapp/i, 'wa'], [/support|soporte|suporte|tickets?|atención al cliente|atendimento/i, 'support'], [/lead|cualific|qualif|captar|convert|conversion|conversión|conversão|visit|traffic|tráfico|tráfego|demo request|solicitudes de demo|pedidos de demo|m[aá]s demos|more demos|mais demos/i, 'leads']];
+function readUser(q) {
+  const f = st.facts; let changed = false;
+  if (/(team|equipo|time)\b.{0,25}(write|email|escrib|escrev)|que me escrib|que me escrevam|write to me|email me/i.test(q)) st.mailMode = 'team';
+  if (/demo|call|llamada|ligação|meeting|reuni|precio|price|preço|quote|presupuesto|orçamento|contract|contrato|sales|ventas|vendas|this (week|month)|esta semana|este mes|urgent/i.test(q)) st.hot++;
+  if (st.awaiting === 'why' && q.length > 2) { f.why = { v: q.length > 70 ? q.slice(0, 68) + '…' : q }; changed = true; st.awaiting = null; }
+  if (!f.use) for (const [re, u] of USE_RX) if (re.test(q)) { f.use = { k: u }; changed = true; break; }
+  const web = /web|site|página|landing/i.test(q), wa = /whatsapp/i.test(q);
+  if (web || wa) { const c = web && wa ? 'both' : wa ? (f.chan && f.chan.k === 'web' ? 'both' : 'wa') : (f.chan && f.chan.k === 'wa' ? 'both' : 'web'); if (!f.chan || f.chan.k !== c) { f.chan = { k: c }; changed = true; } }
+  const v = parseVolume(q); if (v) { f.vol = { v }; changed = true; }
+  const s = parseSize(q); if (s) { f.size = { v: s }; changed = true; }
+  const crm = ['HubSpot', 'Salesforce', 'Pipedrive', 'Zoho', 'Airtable', 'Google Sheets'].filter((t) => new RegExp(t.split(' ').pop(), 'i').test(q));
+  if (crm.length) { f.crm = { v: crm.join(', ') }; changed = true; }
+  const cc = countryFromText(q); if (cc && (!f.country || f.country.cc !== cc || f.country.guess)) { f.country = { cc }; changed = true; }
+  if (changed) { renderFacts(); if (st.planEl) planCard(); }
+}
+function countryFromText(q) {
+  const NAMES = { GB: /\b(uk|united kingdom|england|reino unido|inglaterra|london|londres)\b/i, ES: /\b(spain|españa|espanha|madrid|barcelona)\b/i, US: /\b(usa|united states|estados unidos|eeuu|eua)\b/i, MX: /\b(m[eé]xico)\b/i,
+    BR: /\b(brazil|brasil|s[aã]o paulo)\b/i, PT: /\b(portugal|lisboa|lisbon)\b/i, AR: /\b(argentina)\b/i, CO: /\b(colombia|col[oô]mbia)\b/i, CL: /\b(chile)\b/i, PE: /\b(per[uú])\b/i, IT: /\b(italy|italia|itália)\b/i,
+    FR: /\b(france|francia|frança)\b/i, DE: /\b(germany|alemania|alemanha)\b/i, NL: /\b(netherlands|holland|países bajos|holanda)\b/i, IN: /\b(india|índia)\b/i, IE: /\b(ireland|irlanda)\b/i };
+  for (const [cc, re] of Object.entries(NAMES)) if (re.test(q)) return cc;
+  return '';
+}
+function readAgent(text) {
+  const tail = text.slice(-220);
+  st.awaiting = /(what (made|brought|got) you|qu[eé] te (ha )?(hecho|llevado|llev[oó]|tra[ií]do|trajo)|o que (te )?(trouxe|fez)|por que voc[eê])/i.test(tail) ? 'why' : null;
+}
+const FACT_ORDER = ['why', 'use', 'chan', 'size', 'vol', 'crm', 'country', 'from'];
+function factVal(k, o) {
+  if (k === 'use') return T.USE[o.k]; if (k === 'chan') return T.CHAN[o.k];
+  if (k === 'vol') return fmt(o.v) + T.volU; if (k === 'size') return o.v >= 600 ? '500+' : o.v < 10 ? '<10' : String(o.v);
+  if (k === 'country') return countryName(o.cc, LANG) + (o.guess ? ' · ' + T.guessed : '');
+  if (k === 'from' && o.direct) return T.direct;
+  return o.v;
+}
+function renderFacts() {
+  const box = panel.querySelector('.awe-facts'), list = panel.querySelector('.awe-facts-list');
+  const keys = FACT_ORDER.filter((k) => st.facts[k]);
+  box.classList.remove('on'); /* 10-nov (Fabo): the strip stays hidden; facts still feed the plan card and the summary */
+  list.innerHTML = keys.map((k) => `<button type="button" class="awe-fact${st.facts[k].guess ? ' guess' : ''}" data-awe-fact="${k}"><i>${esc(T.k[k])}</i>${esc(factVal(k, st.facts[k]))}</button>`).join('');
+}
+function editFact(btn) {
+  const k = btn.dataset.aweFact; const o = st.facts[k]; if (!o) return;
+  btn.innerHTML = `<i>${esc(T.k[k])}</i><input value="${esc(k === 'vol' || k === 'size' ? String(o.v) : factVal(k, o).replace(' · ' + T.guessed, ''))}" aria-label="${esc(T.k[k])}">`;
+  const inp = btn.querySelector('input'); inp.focus(); inp.select();
+  const commit = (sendIt) => {
+    const val = inp.value.trim(); if (!val) { renderFacts(); return; }
+    if (k === 'vol' || k === 'size') st.facts[k] = { v: parseFloat(val) || o.v };
+    else if (k === 'country') st.facts[k] = { cc: countryFromText(val) || o.cc, label: val };
+    else if (k === 'use' || k === 'chan') { const u = USE_RX.find(([re]) => re.test(val)); st.facts[k] = k === 'use' && u ? { k: u[1] } : { v: val, k: o.k }; }
+    else st.facts[k] = { v: val };
+    renderFacts(); if (st.planEl) planCard();
+    if (sendIt) say(T.msgCorr(T.k[k].toLowerCase(), k === 'country' ? val : factVal(k, st.facts[k])));
+  };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(true); } if (e.key === 'Escape') renderFacts(); });
+  inp.addEventListener('blur', () => commit(false), { once: true });
+}
+const tierNow = () => (st.facts.country && !st.facts.country.guess ? geoOf(st.facts.country.cc) : GEO.tier);
+
+/* ---------- the advise component: the plan that fits, from landbot.io/pricing ---------- */
+const PRICE = EUR ? { s: '€', starter: [32, 40], pro: [80, 100], wa: [80, 100] } : { s: '$', starter: [36, 45], pro: [88, 110], wa: [80, 100] };   // WhatsApp add-on: +100/mo monthly, +80/mo annual (Professional WA €160 annual on landbot.io/pricing)
+const PLAN_COPY = {
+  en: { free: ['Free', '100 chats/mo · full builder · WhatsApp test number'], starter: ['Starter', '500 chats/mo · 100 AI chats · 2 seats · web'], pro: ['Professional', '2,500 chats/mo · 300 AI chats · HubSpot, Salesforce, Pipedrive · no branding'],
+    prowa: ['Professional + WhatsApp', '2,500 chats/mo · 500 AI chats · 1 WhatsApp number · CRM integrations'], biz: ['Business', 'Custom volume · several numbers · dedicated support · uptime SLA'],
+    why: { free: 'Just exploring or a solo project: build it and test it before paying anything.', starter: 'Website only and a small team: enough volume to launch your first agent.', pro: 'You need it in your CRM and room to grow: the most popular plan.', prowa: 'WhatsApp is part of it: Professional with your own number.', biz: 'Your volume or requirements go past the standard plans: priced on your real usage.' } },
+  es: { free: ['Free', '100 chats/mes · builder completo · número de prueba de WhatsApp'], starter: ['Starter', '500 chats/mes · 100 chats IA · 2 usuarios · web'], pro: ['Professional', '2.500 chats/mes · 300 chats IA · HubSpot, Salesforce, Pipedrive · sin marca'],
+    prowa: ['Professional + WhatsApp', '2.500 chats/mes · 500 chats IA · 1 número de WhatsApp · integraciones CRM'], biz: ['Business', 'Volumen a medida · varios números · soporte dedicado · SLA de disponibilidad'],
+    why: { free: 'Si solo estás explorando o es un proyecto personal: móntalo y pruébalo antes de pagar nada.', starter: 'Solo web y un equipo pequeño: volumen suficiente para lanzar tu primer agente.', pro: 'Lo necesitas en tu CRM y con margen para crecer: el plan más elegido.', prowa: 'WhatsApp entra en juego: Professional con tu propio número.', biz: 'Tu volumen o tus requisitos van más allá de los planes estándar: precio según tu uso real.' } },
+  pt: { free: ['Free', '100 chats/mês · builder completo · número de teste do WhatsApp'], starter: ['Starter', '500 chats/mês · 100 chats de IA · 2 usuários · site'], pro: ['Professional', '2.500 chats/mês · 300 chats de IA · HubSpot, Salesforce, Pipedrive · sem marca'],
+    prowa: ['Professional + WhatsApp', '2.500 chats/mês · 500 chats de IA · 1 número de WhatsApp · integrações de CRM'], biz: ['Business', 'Volume sob medida · vários números · suporte dedicado · SLA de disponibilidade'],
+    why: { free: 'Se você só está explorando ou é um projeto pessoal: monte e teste antes de pagar qualquer coisa.', starter: 'Só site e um time pequeno: volume suficiente para lançar o seu primeiro agente.', pro: 'Você precisa no seu CRM e com espaço para crescer: o plano mais escolhido.', prowa: 'O WhatsApp entra no jogo: Professional com o seu próprio número.', biz: 'O seu volume ou os seus requisitos vão além dos planos padrão: preço pelo seu uso real.' } }
+};
+function pickPlan() {
+  const f = st.facts, wa = f.chan && f.chan.k !== 'web' || f.use && f.use.k === 'wa', size = f.size ? f.size.v : 0, vol = f.vol ? f.vol.v : 0;
+  if (size > 500 || vol > 20000) return 'biz';
+  if (wa) return 'prowa';
+  if (f.crm || size >= 10 || vol > 500) return 'pro';
+  if (size && size < 10 && !vol) return 'starter';
+  return 'pro';
+}
+function maybePlan(ex) {
+  if (!ex.is_ai_agent_message || st.planEl) return;
+  const f = st.facts; if ((f.chan || f.use) && (f.size || f.vol || f.crm)) planCard();
+}
+function planCard(force) {
+  const p = force || pickPlan(), C = PLAN_COPY[LANG], [name, inc] = C[p];
+  const price = p === 'biz' ? `<b style="font:700 22px/1 'DM Sans'">${esc(T.custom)}</b>`
+    : (() => { const a = p === 'starter' ? PRICE.starter[0] : p === 'pro' ? PRICE.pro[0] : PRICE.pro[0] + PRICE.wa[0], m = p === 'starter' ? PRICE.starter[1] : p === 'pro' ? PRICE.pro[1] : PRICE.pro[1] + PRICE.wa[1];
+      return `<b style="font:700 26px/1 'DM Sans'">${PRICE.s}${a}</b><span class="awe-sub" style="display:inline">${esc(T.perMo)} · ${esc(T.annual)} · ${esc(T.monthlyP(PRICE.s + m))}</span>`; })();
+  const card = h(`<div class="awe-card awe-est"><span class="awe-tag">${esc(T.planH)}</span>
+    <div style="font:700 17px/1.3 'DM Sans';color:var(--awe-ink)">${esc(name)}</div>
+    <div style="margin:6px 0 4px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">${price}</div>
+    <div class="awe-sub">${esc(inc)}</div>
+    <div class="awe-why"><b>${esc(T.planWhy)}:</b> ${esc(C.why[p])}</div>
+    <div class="awe-src" style="margin-top:8px"><a href="https://landbot.io/pricing" target="_blank" rel="noopener"><em>${T.fromSite}</em>${esc(T.planSrc)}</a></div></div>`);
+  if (st.planEl && st.planEl.isConnected) st.planEl.replaceWith(card); else push(card);
+  st.planEl = card; st.plan = p;
+}
+// same rule as the agent's Demo rule (Sales, 30-oct): not tier C + any business use, team, CRM, volume or buying signal → demo after the first reply
+function qualifies() {
+  const f = st.facts;
+  return tierNow() !== 'C' && !!(f.use || f.size || f.crm || f.vol || st.hot);
+}
+function decide(lastText, keepChips) {
+  st.lastText = lastText;
+  const body = splitSources(lastText || '').body.replace(/[*_\s]+$/, ''), q = qualifies();
+  const offersCall = q && /call|demo|llamada|reuni|ligação|chamada/i.test(body.split('\n').pop());   // the agent's call offer ends in '?', so let the card show then
+  if (st.teamDone || (/\?\s*$/.test(body) && !offersCall && !(q && st.answers >= 1)) || st.awaiting === 'why') return;   // qualified: the demo card shows even under a question (Sales, 30-oct)
+  let n = null;
+  const small = (st.facts.size && st.facts.size.v < 10) || tierNow() === 'C';
+  if (q && st.answers >= 1) n = { k: 'demo', p: 'demo', s: ['build'], why: T.whyDemo };          // qualified: demo from the first reply
+  else if (st.answers >= 2 || st.items.size) n = { k: 'build', p: 'build', s: small ? [] : ['demo'], why: T.whyBuild };   // email is only taken in the demo path (Fabo, 5-oct)
+  if (!n || n.k === st.nbaKey) return;
+  st.nbaKey = n.k;
+  thread.querySelectorAll('.awe-nba').forEach((x) => x.remove());
+  const btn = (a, primary) => a === 'build'
+    ? `<a ${primary ? 'class="awe-cta" ' : ''}href="${tagUrl(SIGNUP)}" target="_blank" rel="noopener">${esc(T.build)}</a>`
+    : `<button type="button" ${primary ? 'class="awe-cta" ' : ''}data-awe-act="${a}">${esc(a === 'mail' ? T.mailBtn : a === 'team' ? T.teamBtn : T[a])}</button>`;
+  push(h(`<div class="awe-card awe-nba"><span class="awe-tag act">${esc(T.nba)}</span>
+    <div class="awe-why" style="margin-top:0"><b>${esc(T.why)}:</b> ${esc(n.why)}</div>
+    ${btn(n.p, true)}${n.s.length ? `<div class="awe-alt">${n.s.map((a) => esc(T.or) + ' ' + btn(a, false)).join(' · ')}</div>` : ''}</div>`));
+  if (!keepChips) repliesEl.innerHTML = '';
+}
+function act(a) { if (a === 'demo') say(T.msgDemo); else if (a === 'plan') say(T.msgPlan); else if (a === 'mail') { st.mailMode = 'send'; say(T.msgMail); } else if (a === 'team') { st.mailMode = 'team'; say(T.msgTeamMail); } }
+function emailCard() {
+  thread.querySelectorAll('.awe-nba').forEach((x) => x.remove());
+  if (thread.querySelector('.awe-mail:not([data-done])')) return;
+  const card = push(h(`<div class="awe-card awe-mail"><span class="awe-tag act">ACTION</span>
+    <div style="font:700 16px/1.3 'DM Sans';color:var(--awe-ink)">${esc(st.mailMode === 'team' ? T.mail : T.mailSendH)}</div><div class="awe-sub">${esc(st.mailMode === 'team' ? T.mailSub : T.mailSendSub)}</div>
+    <form class="awe-field"><input type="email" required placeholder="${esc(T.mailPh)}" aria-label="Email" autocomplete="email"><button type="submit">${esc(T.sendIt)}</button></form>
+    <div class="awe-sub" data-err style="color:#BE2257;display:none">${esc(T.mailBad)}</div>
+    <div class="awe-alt awe-mail-skip"><button type="button" data-awe-mailskip>${esc(T.mailSkip)}</button></div></div>`));
+  const form = card.querySelector('form'), inp = form.querySelector('input');
+  setTimeout(() => inp.focus({ preventScroll: true }), 300);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault(); const v = inp.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) { inp.setAttribute('aria-invalid', 'true'); card.querySelector('[data-err]').style.display = 'block'; return; }
+    card.dataset.done = '1'; form.querySelectorAll('input,button').forEach((x) => (x.disabled = true));
+    st.facts.email = { v }; push(h(`<div class="awe-me">${esc(v)}</div>`)); setWorking(T.theSite);
+    emit('entry_point_lead', ENTRY.demo, { lead_type: st.mailMode === 'team' ? 'team_email' : 'send_by_email', items: [...st.items].join(',') });
+    deliver(v).catch((err) => console.warn('[awe]', err));
+  });
+}
+/* Calendly's "anything that will help prepare" is seen and edited by the visitor: only what they told us, readable. Nothing internal (tier, guessed country, visits, journey): that reaches sales through the bot fields. */
+function prepNote() {
+  const f = st.facts, P = [];
+  const said = (st.userMsgs || []).map((m) => m.replace(/\s+/g, ' ').trim()).filter((m) => m.length > 12).slice(0, 2).join(' / ');
+  if (said) P.push(({ en: 'In your words', es: 'En tus palabras', pt: 'Nas suas palavras' })[LANG] + ': "' + said.slice(0, 400) + '"');
+  if (f.why) P.push(T.k.why + ': ' + f.why.v);
+  const facts = FACT_ORDER.filter((k) => f[k] && !f[k].guess && !['why', 'from', 'email', 'country'].includes(k)).map((k) => T.k[k] + ': ' + factVal(k, f[k]));
+  if (st.plan) facts.push('Plan: ' + PLAN_COPY.en[st.plan][0]);
+  if (facts.length) P.push(facts.join(' · '));
+  if (st.demoLang) P.push(({ en: 'Demo language', es: 'Idioma de la demo', pt: 'Idioma da demo' })[LANG] + ': ' + st.demoLang);
+  return P.join(' | ');
+}
+function handoffLines() {
+  const d = J(), f = st.facts, L = [];
+  if (f.why) L.push(T.k.why + ': ' + f.why.v);
+  if (d) { L.push(T.k.from + ': ' + (d.from === 'direct' ? T.direct : d.from) + (d.campaign ? ' · ' + d.campaign : '')); if (d.before.length) L.push('→ ' + d.before.join(' → ')); L.push(d.visit > 1 ? '#' + d.visit + ' · ' + (d.firstDaysAgo ? d.firstDaysAgo + 'd' : '0d') : '#1'); }
+  const facts = FACT_ORDER.filter((k) => f[k] && !['why', 'from', 'email'].includes(k)).map((k) => T.k[k] + ': ' + factVal(k, f[k]));
+  if (st.plan) facts.push('Plan: ' + PLAN_COPY.en[st.plan][0]);
+  if (facts.length) L.push(facts.join(' · '));
+  if (st.items.size || st.plan) L.push(T.sent + ': ' + [...st.items, st.plan ? 'plan ' + PLAN_COPY.en[st.plan][0] : ''].filter(Boolean).join(', '));
+  if (st.demoLang) L.push('Demo language: ' + st.demoLang);   // the tier stays internal: bot field country_tier
+  return L;
+}
+
+/* ---------- booking: language choice, then Calendly inside the chat ---------- */
+function bookCard() {
+  thread.querySelectorAll('.awe-nba').forEach((x) => x.remove());
+  const cc = st.facts.country ? st.facts.country.cc : GEO.cc, br = cc === 'BR';
+  st.demoLang = br || LANG === 'pt' ? 'Português' : (LANG === 'es' ? 'Español' : 'English');
+  const langPick = br ? `<div class="awe-sub" style="margin-top:8px">🇧🇷 ${esc(T.demoLangPT)}</div>`
+    : `<div class="awe-sub" style="margin-top:10px">${esc(T.demoLang)}</div><div class="awe-chips" data-awe-langs style="justify-content:flex-start;margin-top:6px">${['English', 'Español', 'Português'].map((l) => `<button type="button" class="awe-chip${l === st.demoLang ? ' on' : ''}" data-awe-dlang="${l}" aria-pressed="${l === st.demoLang}">${l}</button>`).join('')}</div>`;
+  const freeToo = tierNow() === 'C' ? `<div class="awe-why"><b>+</b> ${esc(T.freeToo)} <a href="${tagUrl(SIGNUP)}" target="_blank" rel="noopener">${esc(T.build)}</a></div>` : '';
+  push(h(`<div class="awe-card awe-book"><span class="awe-tag act">DEMO</span>
+    <div style="font:700 16px/1.3 'DM Sans';color:var(--awe-ink)">${esc(T.bookH)}</div><div class="awe-sub">${esc(T.bookSub)}</div>
+    ${langPick}<button type="button" class="awe-cta" data-awe-cal>${esc(T.bookGo)}</button>${freeToo}</div>`));
+  st.lastBtns = ['$0', '$1'];
+  repliesEl.innerHTML = `<button type="button" class="awe-chip" data-awe-say="${esc(T.mailInstead)}" data-awe-payload="$1">${esc(T.mailInstead)}</button>`;
+}
+function calUrl() {
+  const q = new URLSearchParams({ embed_type: 'Inline', embed_domain: location.hostname || 'landbot.io', hide_gdpr_banner: '1', hide_event_type_details: '1', hide_landing_page_details: '1', primary_color: '5a60f6', text_color: '1b2139', utm_medium: 'conversion_agent', utm_campaign: 'lp_chatbot_creator_x', utm_content: ENTRY.demo });
+  if (LAND) { q.set('primary_color', 'ed4078'); q.set('text_color', 'e9ebef'); q.set('background_color', '14171c'); }
+  if (realSource()) q.set('utm_source', realSource());
+  { const inc = new URLSearchParams(location.search); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term'].forEach((k) => { if (inc.get(k)) q.set(k, inc.get(k)); }); }   // the ad's own UTMs win
+  if (st.facts.email) q.set('email', st.facts.email.v);
+  /* the Calendly event asks a1 = WhatsApp phone (required, left to the visitor) and a2 = "anything that will help prepare" (required): the summary goes in a2 */
+  const prep = prepNote();
+  if (prep) q.set('a2', prep.slice(0, 900));
+  return `${BOOK_URL}?${q}`;
+}
+function openCal(btn) {
+  const card = btn.closest('.awe-book'); if (!card || card.querySelector('iframe')) return;
+  btn.remove(); const lp = card.querySelector('[data-awe-langs]'); if (lp) lp.querySelectorAll('button').forEach((b) => (b.disabled = true));
+  const wrap = h(`<div class="awe-cal" data-loading="${esc(T.calLoading)}"><iframe src="${calUrl()}" title="${esc(T.bookH)}" loading="eager"></iframe></div>`);
+  wrap.querySelector('iframe').addEventListener('load', () => wrap.classList.add('ready'), { once: true });
+  const free = card.querySelector('.awe-why'); if (free) card.insertBefore(wrap, free); else card.appendChild(wrap); st.calOpen = true;
+  st.calDetails = false; panel.classList.remove('caldetails'); panel.classList.add('wide', 'booking');
+  setTimeout(fitCal, 400);
+}
+/* the calendar takes the whole visible thread, its top at the top: seen whole on the first view, no scrolling to find it */
+function fitCal() {
+  const cal = thread.querySelector('.awe-cal'); if (!cal || !st.calOpen) return;
+  if (st.calDetails) { detailsCal(); return; }
+  const H = Math.max(320, thread.clientHeight - 16);
+  cal.style.height = H + 'px'; cal.querySelector('iframe').style.height = H + 'px';
+  thread.scrollTo({ top: thread.scrollTop + cal.getBoundingClientRect().top - thread.getBoundingClientRect().top - 8, behavior: 'smooth' });
+}
+/* after a time is picked, Calendly's "Enter details" sits under its meeting summary, hidden inside the iframe's own scroll:
+   the iframe grows to Calendly's real height (calendly.page_height) and the thread scrolls once to the form (sales feedback, 6-nov-2026) */
+const CAL_FORM_TOP = 275;   // summary block above "Enter details" in Calendly's stacked layout, minus a little air
+let calH = 0;
+function detailsCal() {
+  const cal = thread.querySelector('.awe-cal'); if (!cal || !st.calOpen) return;
+  const H = Math.max(calH, thread.clientHeight - 16);
+  cal.style.height = H + 'px'; cal.querySelector('iframe').style.height = H + 'px';
+  if (!st.calScrolled) { st.calScrolled = true; thread.scrollTo({ top: thread.scrollTop + cal.getBoundingClientRect().top - thread.getBoundingClientRect().top + CAL_FORM_TOP, behavior: 'smooth' }); }
+}
+window.addEventListener('resize', () => { if (st.calOpen) fitCal(); });
+panel.addEventListener('transitionend', (e) => { if (e.target === panel && e.propertyName === 'height' && st.calOpen) fitCal(); });
+function closeCal(booked) {
+  const card = thread.querySelector('.awe-book'); panel.classList.remove('wide', 'booking', 'caldetails'); st.calOpen = false; st.calDetails = false; if (!card) return;
+  const cal = card.querySelector('.awe-cal'); if (cal) cal.remove();
+  if (booked) {
+    emit('entry_point_booking', ENTRY.demo, { demo_language: st.demoLang });
+    card.querySelector('.awe-tag').textContent = 'DEMO ✓';
+    card.appendChild(h(`<div class="awe-receipt on"><span class="ok">✓</span><div>${esc(T.booked)}<small>Calendly · ${esc(T.bookH)} · ${esc(st.demoLang || '')}</small></div></div>`));
+    card.appendChild(h(`<details class="awe-sees" open><summary>${esc(T.teamSees)}</summary>${handoffLines().map((l) => `<div>${esc(l)}</div>`).join('')}</details>`));
+    say(T.booked, '$0');
+  }
+}
+window.addEventListener('message', (e) => {
+  if (!/calendly\.com$/.test((() => { try { return new URL(e.origin).hostname; } catch (_) { return ''; } })())) return;
+  const ev = e.data && e.data.event;
+  if (ev === 'calendly.page_height') { calH = parseInt(e.data.payload && e.data.payload.height, 10) || 0; if (st.calOpen && st.calDetails) detailsCal(); }
+  if (ev === 'calendly.date_and_time_selected' && st.calOpen) { st.calDetails = true; st.calScrolled = false; panel.classList.add('caldetails'); setTimeout(detailsCal, 250); }
+  if (ev === 'calendly.event_type_viewed' && st.calOpen && st.calDetails) { st.calDetails = false; panel.classList.remove('caldetails'); fitCal(); }   // back arrow to the day picker
+  if (ev === 'calendly.event_scheduled' && st.calOpen) { st.nextData = calRefs(e.data); closeCal(true); }
+});
+function supportCard() {
+  thread.querySelectorAll('.awe-nba').forEach((x) => x.remove());
+  push(h(`<div class="awe-card"><span class="awe-tag act">SUPPORT</span>
+    <div style="font:700 16px/1.3 'DM Sans';color:var(--awe-ink)">${esc(T.supH)}</div><div class="awe-sub">${esc(T.supSub)}</div>
+    <a class="awe-cta" href="${HELP_URL}" target="_blank" rel="noopener">${esc(T.supGo)}</a></div>`));
+  st.lastBtns = ['$0'];
+  repliesEl.innerHTML = `<button type="button" class="awe-chip" data-awe-say="${esc(T.backQ)}" data-awe-payload="$0">${esc(T.backQ)}</button>`;
+}
+function receipts() {
+  st.teamDone = true; thread.querySelectorAll('.awe-nba').forEach((x) => x.remove());
+  const ctx = FACT_ORDER.filter((k) => st.facts[k] && k !== 'email').map((k) => factVal(k, st.facts[k])).join(' · ') || '—';
+  const card = push(h(`<div class="awe-card"><span class="awe-tag act">ACTION ✓</span>
+    <div style="font:700 16px/1.3 'DM Sans';color:var(--awe-ink);margin-bottom:6px">${esc(T.done)}</div>
+    <div class="awe-receipt"><span class="ok">✓</span><div>${esc(T.r1)}<small>${esc(T.r1s)}</small></div></div>
+    <div class="awe-receipt"><span class="ok">✓</span><div>${esc(T.r2)}<small>${esc(ctx)}</small></div></div>
+    <div class="awe-receipt"><span class="ok">✓</span><div>${esc(st.mailMode === 'team' ? T.r3 : T.r3Send)}<small>${esc(st.mailMode === 'team' ? T.r3s : T.r3sSend)}</small></div></div>
+    <details class="awe-sees"><summary>${esc(T.teamSees)}</summary>${handoffLines().map((l) => `<div>${esc(l)}</div>`).join('')}</details></div>`));
+  card.querySelectorAll('.awe-receipt').forEach((r, i) => setTimeout(() => r.classList.add('on'), 450 * (i + 1)));
+}
+
+/* ---------- the bar: section-aware outcome; waits for the hero to finish its own "thinking" ---------- */
+function setNudge(label, prompt) {
+  if (window.innerWidth < 560) label = label.split(' · ')[0];
+  if (launchInput.dataset.prompt === prompt && launchInput.placeholder === label) return;
+  pill.classList.add('swap');
+  setTimeout(() => { launchInput.placeholder = label; launchInput.setAttribute('aria-label', label); launchInput.dataset.prompt = prompt; pill.classList.remove('swap'); }, 200);
+}
+let ready = false;   // law 4: one thing asking for attention. The bar appears once the hero (first section) is out of view, or after 7 s.
+function reveal() { if (ready) return; ready = true; st.justRevealed = true; setTimeout(() => { st.justRevealed = false; }, 1200); launch.classList.remove('tuck'); syncLaunch(); }
+(() => {
+  const hero = document.querySelector('.lbh-hero');
+  if (!hero) { window.addEventListener('scroll', () => { if (window.scrollY > window.innerHeight) reveal(); }, { passive: true }); return; }
+  const nextSec = document.querySelector('#manifesto');
+  const check = () => { if (!ready && (nextSec ? nextSec.getBoundingClientRect().top <= window.innerHeight * 0.5 : hero.getBoundingClientRect().bottom <= 0)) reveal(); };
+  window.addEventListener('scroll', check, { passive: true }); check();   // also when the page opens already scrolled past it
+})();
+function syncLaunch() {
+  launch.classList.toggle('off', st.open);
+  if (ready && !st.open && !launch.classList.contains('tuck')) emit('entry_point_view', ENTRY.demo);
+  let active = 'hero';
+  for (const [id] of SECTIONS) { const el = secEl(id); const r = el && el.getBoundingClientRect(); if (r && r.height > 0 && r.top < window.innerHeight * 0.45) active = id; }
+  const key = active + (window.innerWidth < 560 ? ':s' : ':l');
+  if (key !== st.section) { st.section = key; const [l, p] = T.nudge[active]; setNudge(l, p); }
+}
+const TOUCH = matchMedia('(hover: none)').matches;
+function keepFocus(force) {
+  if (!st.open) return;
+  const box = panel.querySelector('.awe-foot input'), a = document.activeElement;
+  if (a === box) return;
+  if (a && a !== document.body && a.matches('input, textarea, select') && a !== launchInput) return;
+  if (TOUCH && !force) return;
+  box.focus({ preventScroll: true });
+}
+document.addEventListener('submit', (e) => {
+  const f = e.target.closest && e.target.closest('[data-awe-form]'); if (!f) return;
+  e.preventDefault(); const inp = f.querySelector('input'); const v = inp.value.trim() || (inp === launchInput ? inp.dataset.prompt : ''); inp.value = ''; st.via = 'typed'; say(v); keepFocus(true);
+});
+document.addEventListener('click', (e) => {
+  const su = e.target.closest && e.target.closest('a[href*="sign-up"], a[href*="signup"]'); if (su && su.closest('#awe-panel')) emit('entry_point_click', ENTRY.signup);
+  const t = e.target.closest ? e.target : null; if (!t) return;
+  const dl = t.closest('[data-awe-dlang]'); if (dl) { st.demoLang = dl.dataset.aweDlang; dl.parentElement.querySelectorAll('button').forEach((b) => { const on = b === dl; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); return; }
+  if (t.closest('[data-awe-more]')) { if (st.more) st.more(true); keepFocus(); return; }
+  if (t.closest('[data-awe-down]')) { thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' }); keepFocus(); return; }
+  const cp = t.closest('[data-awe-copy]'); if (cp) { const code = cp.closest('.awe-prompt').querySelector('pre').textContent; try { navigator.clipboard.writeText(code); } catch (_) {} cp.textContent = T.copied; emit('entry_point_click', ENTRY.signup, { action: 'copy_prompt' }); setTimeout(() => { cp.textContent = T.copy; }, 1800); return; }
+  const sk = t.closest('[data-awe-mailskip]'); if (sk) { const card = sk.closest('.awe-mail'); skipMail(card).then(() => { repliesEl.innerHTML = starterChips(); keepFocus(true); }); return; }
+  if (t.closest('[data-awe-reset]')) { newConversation(); return; }
+  if (t.closest('[data-awe-retry]')) { retryLast(); return; }
+  const th = t.closest('[data-awe-theme]'); if (th) { setTheme(panel.classList.contains('light') ? 'dark' : 'light', true); return; }
+  const chip = t.closest('[data-awe-say]'); if (chip && chip.dataset.aweSay === T.mailInstead) { st.mailMode = 'team'; st.fromBook = true; }
+  if (chip) { st.via = 'chip'; say(chip.dataset.aweSay, chip.dataset.awePayload || undefined); keepFocus(); return; }
+  const cal = t.closest('[data-awe-cal]'); if (cal) { openCal(cal); return; }
+  const bl = t.closest('[data-awe-blog]'); if (bl) { emit('entry_point_click', ENTRY.signup, { action: 'blog_open', post: bl.dataset.aweBlog }); return; }
+  const tf = t.closest('[data-awe-tplfull]'); if (tf) { emit('entry_point_click', ENTRY.signup, { action: 'template_open', template: tf.dataset.aweTplfull, from: tf.closest('.awe-tplstrip') ? 'strip' : 'card' }); return; }   // the link opens the template full screen in a new tab
+  const p = t.closest('[data-awe-point]'); if (p) { pointAt(p.dataset.awePoint); return; }
+  const a = t.closest('[data-awe-act]'); if (a) { act(a.dataset.aweAct); return; }
+  const fct = t.closest('[data-awe-fact]'); if (fct && !fct.querySelector('input')) { editFact(fct); return; }
+  if (t.closest('[data-awe-close]')) { closePanel(); return; }
+  if (t.closest('[data-awe-open]')) { if (launchInput.value.trim()) { const v = launchInput.value; launchInput.value = ''; st.via = 'typed'; say(v); } else { openPanel('launcher'); panel.querySelector('.awe-foot input').focus(); } return; }
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); reveal(); if (st.open) closePanel(); else { openPanel('shortcut'); panel.querySelector('.awe-foot input').focus(); } }
+  if (e.key === 'Escape' && st.open) closePanel();
+});
+window.addEventListener('scroll', syncLaunch, { passive: true });
+let lastY = window.scrollY, tuckT = 0;
+window.addEventListener('scroll', () => {
+  if (!ready || st.justRevealed) return;
+  const y = window.scrollY, down = y > lastY + 6, up = y < lastY - 6;
+  if (down || up) lastY = y;
+  const busy = st.open || st.unread || launch.contains(document.activeElement);
+  if (down && y > 240 && !busy) launch.classList.add('tuck');
+  if (up || busy) launch.classList.remove('tuck');
+  clearTimeout(tuckT); tuckT = setTimeout(() => launch.classList.remove('tuck'), 900);
+}, { passive: true });
+window.addEventListener('resize', syncLaunch);
+/* step aside while something else owns the screen: the cookie panel (CookieFirst <dialog>), any open dialog,
+   or the home's own modals (use-case and customer-story). One thing asking for attention. */
+const OVERLAYS = 'dialog[open], [class*="cookiefirst" i], .lb-x:not([hidden])';
+function overlayOpen() {
+  for (const el of document.querySelectorAll(OVERLAYS)) {
+    if (el.closest('#awe-panel, #awe-launch')) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 200 && r.height > 80 && (el.matches(':target') || el.matches('dialog[open]') || (getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).opacity !== '0'))) return true;   // home modals open via #hash (:target) and fade in
+  }
+  return false;
+}
+setInterval(() => {
+  const busy = overlayOpen();
+  document.documentElement.toggleAttribute('data-awe-open', st.open);   // the LP's exit pop-up does not open over the chat
+  if (busy && st.open) closePanel();
+  launch.classList.toggle('aside', busy);
+}, 400);
+/* ---------- Land, alive (theme land) ----------
+   Port of the LP's glyph engine (Brandbook V2): wanders, looks at the pointer (the core moves inside the ring like an eye),
+   breathes, beats now and then (faster while working), squeezes when touched.
+   And contrast: the bar turns light over dark sections and stays dark over light ones, so it never gets lost on the black page. */
+if (LAND) {
+  const reduceM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const GS = new WeakMap(); let mx = -1e4, my = -1e4, lastMove = -99;
+  const now = () => performance.now() / 1000;
+  addEventListener('pointermove', (e) => { mx = e.clientX; my = e.clientY; lastMove = now(); }, { passive: true });
+  addEventListener('pointerdown', (e) => {
+    document.querySelectorAll('.awe-glyph svg').forEach((svg) => { const s = GS.get(svg); const host = svg.closest('#awe-launch, #awe-panel'); if (s && host && host.contains(e.target)) s.squeeze = now() + 0.18; });
+  }, true);
+  const fresh = () => ({ gx: 0, gy: 0, vx: 0, vy: 0, tx: 0, ty: 0, sc: 1, sv: 0, ph: Math.random() * 6, beatUntil: 0, nextBeat: 1.5 + Math.random() * 3, nextWander: 0, squeeze: 0, t: 0 });
+  function frame() {
+    const t = now();
+    document.querySelectorAll('.awe-glyph svg').forEach((svg) => {
+      const r = svg.getBoundingClientRect(); if (!r.width || r.bottom < 0 || r.top > innerHeight) return;
+      let s = GS.get(svg); if (!s) { s = fresh(); s.t = t; GS.set(svg, s); }
+      const dt = Math.min(0.05, t - s.t); s.t = t;
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2, dx = mx - cx, dy = my - cy, d = Math.hypot(dx, dy) || 1;
+      const looking = t - lastMove < 2.5 && d < 1100, working = !!svg.closest('.work');
+      if (looking) { const k = Math.min(1, d / 200); s.tx = dx / d * 32 * k; s.ty = dy / d * 24 * k; }
+      else if (t > s.nextWander) { const rr = Math.random() < 0.3 ? 0 : 10 + Math.random() * 26, a = Math.random() * Math.PI * 2; s.tx = Math.cos(a) * rr; s.ty = Math.sin(a) * rr * 0.7; s.nextWander = t + 0.9 + Math.random() * 2.6; }
+      s.vx = s.vx * 0.86 + (s.tx - s.gx) * 0.055; s.gx += s.vx;
+      s.vy = s.vy * 0.86 + (s.ty - s.gy) * 0.055; s.gy += s.vy;
+      s.ph += dt * (working ? 2.2 : 1);
+      if (t > s.nextBeat) { s.beatUntil = t + 0.12; s.nextBeat = t + (working ? 0.7 + Math.random() * 0.6 : 3 + Math.random() * 4); }
+      const near = looking && d < 140;
+      const target = t < s.squeeze ? 0.86 : (t < s.beatUntil ? 0.95 : (near ? 1.06 : 1));
+      s.sv = s.sv * 0.8 + (target - s.sc) * 0.14; s.sc += s.sv;
+      const br = 1 + 0.014 * Math.sin(0.92 * s.ph) + 0.01 * Math.sin(1.47 * s.ph + 1.3);
+      const tr = (f, sc) => `translate(${(50 + s.gx * f * 1.4).toFixed(2)} ${(50 + s.gy * f * 1.4).toFixed(2)}) scale(${sc.toFixed(4)}) translate(-50 -50)`;
+      const q = (c) => svg.querySelector(c);
+      q('.g-body').setAttribute('transform', tr(0.055, s.sc * br));
+      q('.g-ring').setAttribute('transform', tr(0.075, 1));
+      q('.g-core').setAttribute('transform', tr(0.175, 1));
+    });
+    requestAnimationFrame(frame);
+  }
+  if (!reduceM) requestAnimationFrame(frame);
+
+  /* contrast: what is behind the bar? its first non-transparent background decides */
+  const lum = (c) => { const m = c.match(/\d+(\.\d+)?/g); if (!m) return null; const [r, g, b, a] = m.map(Number); if (a === 0 || m.length === 4 && a < 0.5) return null; return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
+  function behind() {
+    const pill = launch.querySelector('.awe-pill'); if (!pill) return;
+    const r = pill.getBoundingClientRect(); if (!r.width) return;
+    const stack = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2).filter((el) => !el.closest('#awe-launch, #awe-panel, #awe-scrim'));
+    let L = null;
+    for (const el of stack) { for (let n = el; n && n !== document.documentElement && L === null; n = n.parentElement) L = lum(getComputedStyle(n).backgroundColor); if (L !== null) break; }
+    if (L === null) L = lum(getComputedStyle(document.body).backgroundColor) ?? 0;
+    launch.classList.toggle('bar-light', L < 0.45);   // dark page behind -> light bar
+  }
+  setInterval(behind, 350); addEventListener('scroll', () => requestAnimationFrame(behind), { passive: true });
+}
+const asideCss = document.createElement('style'); asideCss.textContent = '#awe-launch.aside{opacity:0!important;pointer-events:none!important;transform:translate(-50%,28px)!important}'; document.head.appendChild(asideCss);
+/* consent withdrawn (functional off) from the cookie panel: the agent leaves the page */
+function consentGone() { const c = window.CookieFirst; return !!(c && c.consent && c.hasConsented && !c.consent.functional); }
+['cf_consent', 'cf_consent_loaded'].forEach((ev) => window.addEventListener(ev, () => setTimeout(() => {
+  if (!consentGone()) return;
+  closePanel(); [launch, panel, scrim, hideSticky].forEach((n) => n && n.remove());
+}, 50)));
+new MutationObserver(() => { const l = htmlLang(); if (l === PAGE_LANG) return; PAGE_LANG = l; if (!(st.userMsgs && st.userMsgs.length)) { LANG = l; T = DICT[LANG]; paint(); } })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+async function newConversation() {
+  await restartSession();
+  if (LANG !== PAGE_LANG) { LANG = PAGE_LANG; T = DICT[LANG]; paint(); }
+  closeCal(false);
+  Object.assign(st, { fixedNote: '', fastBook: false, salesMissed: false, salesReady: null, restarted: false, userMsgs: [], answers: 0, nbaKey: '', items: new Set(), plan: null, planEl: null, teamDone: false, hot: 0, mailMode: 'team', fromBook: false, demoLang: null, cited: new Set(), awaiting: null, facts: {} });
+  initFacts(); thread.innerHTML = ''; repliesEl.innerHTML = ''; setWorking(null); renderFacts(); openPanel('reset'); keepFocus(true);
+}
+function setTheme(t, remember) {
+  const light = t === 'light'; panel.classList.toggle('light', light);
+  const r = panel.querySelector('[data-awe-reset]'); r.setAttribute('aria-label', T.resetL); r.title = T.resetL;
+  const b = panel.querySelector('[data-awe-theme]'); b.textContent = light ? '☾' : '☀︎'; b.setAttribute('aria-label', light ? T.themeD : T.themeL); b.title = b.getAttribute('aria-label');
+  if (remember) { try { localStorage.setItem('awe-theme', t); } catch (_) {} }
+}
+const mqLight = matchMedia('(prefers-color-scheme: light)');
+let savedTheme = null; try { savedTheme = localStorage.getItem('awe-theme'); } catch (_) {}
+setTheme(LAND ? 'dark' : (savedTheme || (mqLight.matches ? 'light' : 'dark')));
+mqLight.addEventListener('change', (e) => { let s2 = null; try { s2 = localStorage.getItem('awe-theme'); } catch (_) {} if (!s2 && !LAND) setTheme(e.matches ? 'light' : 'dark'); });
+paint();
+window.lbAweHome = { geo: GEO, lang: () => LANG, st, decide };   // for debugging only
+} catch (err) { if (String(err && err.message) !== 'already loaded') console.warn('[awe] layer failed', err); }
